@@ -1,0 +1,10 @@
+# sample brcheck config file
+
+[log]
+lognet = true # log network's activity (default: false)
+nostats = false # disable statistics' log (default: true)
+
+[conn]
+maxconn = 100 #  max electrum's connections ( default: 100 )
+resetconn = 100 # reset connection with an electrum peer after N requests ( default: 100 )
+# ^^^^^ this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT

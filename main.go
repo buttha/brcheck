@@ -2,11 +2,12 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
+
+	_ "github.com/BurntSushi/toml" // for configuration file
 )
 
 // BrainResult for tests' result
@@ -22,11 +23,7 @@ type BrainResult struct {
 	NumTxCompressed       int
 }
 
-var paramLognet *bool   // -lognet : log network activity ( default: false )
-var paramMaxconn *int   // -maxconn 10 : max electrum's connections ( default: 100 )
-var paramNostats *bool  // -nostats : don't log activity stats
-var paramResetconn *int // -resetconn 200 : reset connection with an electrum peer after paramResetconn requests ( default: 100 )
-// this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT
+var config Config
 
 func main() {
 
@@ -41,15 +38,16 @@ func main() {
 
 	var workingtests int
 
-	paramLognet = flag.Bool("lognet", false, "log network activity")
-	paramMaxconn = flag.Int("maxconn", 100, "max electrum's connections")
-	paramNostats = flag.Bool("nostats", false, "don't log activity stats")
-	paramResetconn = flag.Int("resetconn", 100, " reset connection with an electrum peer after N requests")
-	flag.Parse()
+	cfg, err := ParseConfig() // reads command line params and config file
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	config = cfg
 
 	// stats
 	var totaltests, minutetests, found uint64
-	if *paramNostats == false {
+	if config.Log.Nostats == false {
 		start := time.Now()
 		statsChan := time.NewTicker(time.Second * 60).C
 		go func() {
