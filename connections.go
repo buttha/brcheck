@@ -71,9 +71,9 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 	num = 0
 	// go on in order to reach and mantain paramMaxconn connections
 	for {
-		if len(connectedpeers) < *paramMaxconn {
-			newconn = *paramMaxconn - len(connectedpeers) // how many new connections to establish
-			for _, disco := range discoveredpeers {       // search for a peer...
+		if len(connectedpeers) < config.Conn.Maxconn {
+			newconn = config.Conn.Maxconn - len(connectedpeers) // how many new connections to establish
+			for _, disco := range discoveredpeers {             // search for a peer...
 				if connectedpeers[disco.Name].connection == nil { // .... not already connected...
 					for _, feat := range disco.Features { // ... which supports...
 						if strings.HasPrefix(feat, "s") { // ... SSL
@@ -153,7 +153,7 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		resultschan:   resultschan,
 	}
 
-	if *paramLognet {
+	if config.Log.Lognet {
 		log.Printf("connected to: %s (# peers: %d)", peer.Name, len(connectedpeers))
 	}
 
@@ -284,9 +284,9 @@ func serveRequests(peer connectedpeer) {
 		numrequests++
 
 		// reset connection if maximum request's number is reached
-		if numrequests > *paramResetconn {
-			if *paramLognet {
-				log.Printf("Disconnected from: %s (# peers: %d): reached %d requests", peer.peer.Name, len(connectedpeers)-1, *paramResetconn)
+		if numrequests > config.Conn.Resetconn {
+			if config.Log.Lognet {
+				log.Printf("Disconnected from: %s (# peers: %d): reached %d requests", peer.peer.Name, len(connectedpeers)-1, config.Conn.Resetconn)
 			}
 			return
 		}
@@ -297,7 +297,7 @@ func serveRequests(peer connectedpeer) {
 
 func servererr(peer connectedpeer, req BrainAddress, operation string, err error) {
 	peer.nottestedchan <- req // send back request so another server will serve it
-	if *paramLognet {
+	if config.Log.Lognet {
 		log.Printf("Disconnected from: %s (# peers: %d) requesting \"%s\" on address %+v err: %s", peer.peer.Name, len(connectedpeers)-1, operation, req, err)
 	}
 }
