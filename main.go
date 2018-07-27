@@ -65,30 +65,42 @@ func main() {
 
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
 
-	scanner := bufio.NewScanner(os.Stdin) // read from standard input. Next release: 0mq
-	for {
+	finishedscanning := make(chan bool)
+	finishedtesting := make(chan bool)
 
-		if scanner.Scan() {
-			address = BrainGenerator(scanner.Text())
-			wordschan <- address
-			workingtests++
-		}
-		select {
-		case nottested = <-nottestedchan:
-			wordschan <- nottested // resubmit to another server
-		case result = <-resultschan: // here it's the result
-			workingtests--
-			if result.NumTx+result.NumTxCompressed != 0 {
-				fmt.Printf("%+v\n", result)
-				found++
+	go func() { // serve tests' results
+		for {
+			select {
+			case nottested = <-nottestedchan:
+				wordschan <- nottested // resubmit to another server
+			case result = <-resultschan: // here it's the result
+				workingtests--
+				if result.NumTx+result.NumTxCompressed != 0 {
+					fmt.Printf("%+v\n", result)
+					found++
+				}
+				totaltests++ // stats
+				minutetests++
+
+				if workingtests == 0 {
+					select {
+					case <-finishedscanning: // I can quit
+						finishedtesting <- true
+						return
+					default:
+					}
+				}
 			}
-			totaltests++ // stats
-			minutetests++
-		default:
 		}
+	}()
 
-		if workingtests == 0 {
-			break
-		}
+	scanner := bufio.NewScanner(os.Stdin) // read from standard input. Next release: 0mq
+	for scanner.Scan() {
+		address = BrainGenerator(scanner.Text())
+		wordschan <- address
+		workingtests++
 	}
+	finishedscanning <- true
+	<-finishedtesting // wait the end of tests
+
 }
