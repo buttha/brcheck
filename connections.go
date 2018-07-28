@@ -71,7 +71,7 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 	num = 0
 	// go on in order to reach and mantain paramMaxconn connections
 	for {
-		if len(connectedpeers) < config.Conn.Maxconn {
+		if len(connectedpeers) < config.Conn.Maxconn || config.Conn.Maxconn == -1 {
 			newconn = config.Conn.Maxconn - len(connectedpeers) // how many new connections to establish
 			for _, disco := range discoveredpeers {             // search for a peer...
 				if connectedpeers[disco.Name].connection == nil { // .... not already connected...
@@ -83,7 +83,7 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 						}
 					}
 				}
-				if newconn == 0 {
+				if newconn == 0 && config.Conn.Maxconn != -1 {
 					break
 				}
 			}
