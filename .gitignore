@@ -3,3 +3,4 @@ brcheck.exe
 brcheck
 res.txt
 .DS_Store
+*.db

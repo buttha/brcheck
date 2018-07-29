@@ -2,12 +2,12 @@ package main
 
 import (
 	"bufio"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"time"
-
-	_ "github.com/BurntSushi/toml" // for configuration file
 )
 
 // BrainResult for tests' result
@@ -36,14 +36,36 @@ func main() {
 	var nottested BrainAddress
 	var result BrainResult
 
-	var workingtests int
-
 	cfg, err := ParseConfig() // reads command line params and config file
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Error reading command line params:", err)
 		return
 	}
 	config = cfg
+
+	if config.Db.Dbfile == "" {
+		fmt.Println("Missing database file name. Use config file or command line parameter -dbfile")
+		return
+	}
+
+	var db *sql.DB
+	db, err = openDb()
+	if err != nil {
+		fmt.Println("Error opening db:", err)
+		return
+	}
+
+	defer closeDb(db)
+	// detect program interrupt
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		<-signalChan
+		log.Println("Received an interrupt, stopping service...")
+		closeDb(db)
+		log.Println("...done")
+		os.Exit(0)
+	}()
 
 	// stats
 	var totaltests, minutetests, found uint64
@@ -63,42 +85,96 @@ func main() {
 
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
 
-	finishedscanning := make(chan bool)
-	finishedtesting := make(chan bool)
+	finishedscanning := make(chan bool)         // finished reading stdin
+	finishedtesting := make(chan bool)          // finished testing passphrases
+	writeNewAddrToDb := make(chan BrainAddress) // write new address to db (used by main cicle to pass address to db goroutine)
 
-	go func() { // serve tests' results
+	go func() { // test db data
+		activetests := 0
+		readinginput := true
 		for {
+
 			select {
+			case <-finishedscanning:
+				readinginput = false
 			case nottested = <-nottestedchan:
 				wordschan <- nottested // resubmit to another server
+			case totest := <-writeNewAddrToDb:
+				err = insertDb(totest, db)
+				if err != nil {
+					log.Println("error inserting in db a row to test: " + err.Error())
+				}
 			case result = <-resultschan: // here it's the result
-				workingtests--
+				activetests--
+				err = updateDb(result, db)
+				if err != nil {
+					log.Println("error writing a result in db: " + err.Error())
+				}
 				if result.NumTx+result.NumTxCompressed != 0 {
-					fmt.Printf("%+v\n", result)
+					if config.Log.Logresult {
+						log.Printf("%+v\n", result)
+					}
 					found++
 				}
 				totaltests++ // stats
 				minutetests++
-
-				if workingtests == 0 {
-					select {
-					case <-finishedscanning: // I can quit
-						finishedtesting <- true
-						return
-					default:
-					}
-				}
+			default:
 			}
+
+			numrows := 0
+			var checking []string // used to mark
+			rows, err := db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL")
+			checkErr("during SELECT rows to test", err)
+			var (
+				tPassphrase           string
+				tAddress              string
+				tPrivkeyWIF           string
+				tCompressedAddress    string
+				tCompressedPrivkeyWIF string
+			)
+			for rows.Next() {
+				err = rows.Scan(&tPassphrase, &tAddress, &tPrivkeyWIF, &tCompressedAddress, &tCompressedPrivkeyWIF)
+				checkErr("reading row to test", err)
+				numrows++
+				wordschan <- BrainAddress{
+					Passphrase:           tPassphrase,
+					Address:              tAddress,
+					PrivkeyWIF:           tPrivkeyWIF,
+					CompressedAddress:    tCompressedAddress,
+					CompressedPrivkeyWIF: tCompressedPrivkeyWIF,
+				}
+				checking = append(checking, tPassphrase)
+				activetests++
+			}
+			rows.Close()
+			for _, undercheck := range checking { // mark line as under testing
+				err = testingDb(undercheck, db)
+				checkErr("setting test flag", err)
+
+			}
+
+			if numrows == 0 && !readinginput && activetests == 0 {
+				finishedtesting <- true
+				return
+			}
+
 		}
 	}()
 
-	scanner := bufio.NewScanner(os.Stdin) // read from standard input. Next release: 0mq
+	// main cicle
+	scanner := bufio.NewScanner(os.Stdin) // read from standard input
 	for scanner.Scan() {
 		address = BrainGenerator(scanner.Text())
-		wordschan <- address
-		workingtests++
+		writeNewAddrToDb <- address
 	}
-	finishedscanning <- true
-	<-finishedtesting // wait the end of tests
+	finishedscanning <- true // say "I've finished reading from stdin"
+	<-finishedtesting        // wait the end of tests
 
+}
+
+func checkErr(where string, err error) {
+	if err != nil {
+		log.Printf("error " + where + ":")
+		panic(err)
+	}
 }
