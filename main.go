@@ -85,28 +85,20 @@ func main() {
 
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
 
-	finishedscanning := make(chan bool)         // finished reading stdin
-	finishedtesting := make(chan bool)          // finished testing passphrases
-	writeNewAddrToDb := make(chan BrainAddress) // write new address to db (used by main cicle to pass address to db goroutine)
+	finishedscanning := make(chan bool) // finished reading stdin
+	finishedtesting := make(chan bool)  // finished testing passphrases
 
-	go func() { // test db data
-		activetests := 0
-		readinginput := true
+	activetests := 0
+	go func() { // manage electrum's results
 		for {
-
 			select {
-			case <-finishedscanning:
-				readinginput = false
 			case nottested = <-nottestedchan:
 				wordschan <- nottested // resubmit to another server
-			case totest := <-writeNewAddrToDb:
-				err = insertDb(totest, db)
-				if err != nil {
-					log.Println("error inserting in db a row to test: " + err.Error())
-				}
 			case result = <-resultschan: // here it's the result
 				activetests--
+				mutexSQL.Lock()
 				err = updateDb(result, db)
+				mutexSQL.Unlock()
 				if err != nil {
 					log.Println("error writing a result in db: " + err.Error())
 				}
@@ -118,12 +110,47 @@ func main() {
 				}
 				totaltests++ // stats
 				minutetests++
+			}
+		}
+	}()
+
+	go func() { // test db data
+		readinginput := true
+		for {
+			select {
+			case <-finishedscanning:
+				readinginput = false
 			default:
 			}
 
+			// elaborate queue
+			mutexSQL.Lock()
+			rows, err := db.Query("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT 10")
+			checkErr("during SELECT queue rows to elaborate", err)
+			var insertqueue []BrainAddress
+			var tpass string
+			for rows.Next() {
+				err = rows.Scan(&tpass)
+				checkErr("reading queue row to process", err)
+				address = BrainGenerator(tpass)
+				insertqueue = append(insertqueue, address)
+			}
+			rows.Close()
+			mutexSQL.Unlock()
+			for _, taddr := range insertqueue {
+				mutexSQL.Lock()
+				err = insertDb(taddr, db)
+				checkErr("inserting in db a row to test:", err)
+				err = deleteQueueDb(taddr.Passphrase, db)
+				checkErr("removing a queue line", err)
+				mutexSQL.Unlock()
+			}
+
+			// elaborate brains
 			numrows := 0
-			var checking []string // used to mark
-			rows, err := db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL")
+			var checking []string // used to mark a line as under testing
+			mutexSQL.Lock()
+			rows, err = db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL ORDER BY Inserted")
 			checkErr("during SELECT rows to test", err)
 			var (
 				tPassphrase           string
@@ -132,25 +159,31 @@ func main() {
 				tCompressedAddress    string
 				tCompressedPrivkeyWIF string
 			)
+
 			for rows.Next() {
 				err = rows.Scan(&tPassphrase, &tAddress, &tPrivkeyWIF, &tCompressedAddress, &tCompressedPrivkeyWIF)
 				checkErr("reading row to test", err)
 				numrows++
-				wordschan <- BrainAddress{
+				select {
+				case wordschan <- BrainAddress{
 					Passphrase:           tPassphrase,
 					Address:              tAddress,
 					PrivkeyWIF:           tPrivkeyWIF,
 					CompressedAddress:    tCompressedAddress,
 					CompressedPrivkeyWIF: tCompressedPrivkeyWIF,
+				}:
+					checking = append(checking, tPassphrase)
+					activetests++
+				default:
 				}
-				checking = append(checking, tPassphrase)
-				activetests++
 			}
 			rows.Close()
+			mutexSQL.Unlock()
 			for _, undercheck := range checking { // mark line as under testing
+				mutexSQL.Lock()
 				err = testingDb(undercheck, db)
 				checkErr("setting test flag", err)
-
+				mutexSQL.Unlock()
 			}
 
 			if numrows == 0 && !readinginput && activetests == 0 {
@@ -163,10 +196,15 @@ func main() {
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
+
+	mutexSQL.Lock()
 	for scanner.Scan() {
-		address = BrainGenerator(scanner.Text())
-		writeNewAddrToDb <- address
+		err = insertQueueDb(scanner.Text(), db)
+		if err != nil {
+			log.Println("error inserting in db queue a row to test: " + err.Error())
+		}
 	}
+	mutexSQL.Unlock()
 	finishedscanning <- true // say "I've finished reading from stdin"
 	<-finishedtesting        // wait the end of tests
 
