@@ -69,7 +69,7 @@ func main() {
 	}()
 
 	// stats
-	var totaltests, minutetests, found, brainsgenerated uint64
+	var STATtotaltests, STATminutetests, STATfound, STATbrainsgenerated uint64
 	if config.Log.Nostats == false {
 		start := time.Now() // for future use
 		_ = start
@@ -77,11 +77,11 @@ func main() {
 		go func() {
 			for {
 				<-statsChan
-				avgmin := float64(minutetests) / 60.0
-				brainsgeneratedpersec := float64(brainsgenerated) / 60.0
-				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d | Brains generated: %d (%.2f/s)\n", totaltests, minutetests, avgmin, found, brainsgenerated, brainsgeneratedpersec)
-				minutetests = 0
-				brainsgenerated = 0
+				STATavgmin := float64(STATminutetests) / 60.0
+				STATbrainsgeneratedpersec := float64(STATbrainsgenerated) / 60.0
+				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d | Brains generated: %d (%.2f/s)\n", STATtotaltests, STATminutetests, STATavgmin, STATfound, STATbrainsgenerated, STATbrainsgeneratedpersec)
+				STATminutetests = 0
+				STATbrainsgenerated = 0
 			}
 		}()
 	}
@@ -109,10 +109,10 @@ func main() {
 					if config.Log.Logresult {
 						log.Printf("%+v\n", result)
 					}
-					found++
+					STATfound++
 				}
-				totaltests++ // stats
-				minutetests++
+				STATtotaltests++ // stats
+				STATminutetests++
 			}
 		}
 	}()
@@ -121,10 +121,11 @@ func main() {
 		for {
 			numqrows := 0
 			mutexSQL.Lock()
-			limit := len(connectedpeers) * 2
+			limit := len(connectedpeers)
 			if limit < 10 {
 				limit = 10
 			}
+			limit = 1
 			rows, err := db.Query("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT " + strconv.Itoa(limit))
 			checkErr("during SELECT queue rows to elaborate", err)
 			var insertqueue []BrainAddress
@@ -141,16 +142,18 @@ func main() {
 			for _, tpass := range tpasses { // convert
 				address = BrainGenerator(tpass)
 				insertqueue = append(insertqueue, address)
-				brainsgenerated++
+				STATbrainsgenerated++
 			}
+			mutexSQL.Lock()
+			tx, err := db.Begin()
 			for _, taddr := range insertqueue { // write
-				mutexSQL.Lock()
 				err = insertDb(taddr, db)
 				checkErr("inserting in db a row to test:", err)
 				err = deleteQueueDb(taddr.Passphrase, db)
 				checkErr("removing a queue line", err)
-				mutexSQL.Unlock()
 			}
+			tx.Commit()
+			mutexSQL.Unlock()
 
 			if numqrows == 0 {
 				finishedqueue <- true

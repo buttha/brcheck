@@ -2,11 +2,10 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"math/big"
 
-	"github.com/buttha/btckeygenie/btckey"
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
 )
 
 // BrainAddress contains compressed and uncompressed key/address
@@ -33,60 +32,17 @@ func BrainGenerator(passphrase string) BrainAddress {
 
 	sh := sha256.Sum256([]byte(passphrase)) // sha256
 
-	dst := make([]byte, hex.EncodedLen(len(sh)))
-	hex.Encode(dst, sh[:])
-	hash := string(dst) // hex(sha256)
-
-	d := new(big.Int)
-	d, _ = d.SetString(hash, 16) // bigint(hex(sha256))
-
-	key := btckey.NewPrivateKey(d)
+	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), sh[:])
+	wif, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, false) // brain.PrivkeyWIF
+	wifC, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, true) // brain.CompressedPrivkeyWIF
+	addr, _ := btcutil.NewAddressPubKey(pubKey.SerializeUncompressed(), &chaincfg.MainNetParams)
+	addrC, _ := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(), &chaincfg.MainNetParams)
 
 	brain.Passphrase = passphrase
-	brain.Address = key.ToAddressUncompressed()
-	brain.PrivkeyWIF = key.ToWIF()
-	brain.CompressedAddress = key.ToAddress()
-	brain.CompressedPrivkeyWIF = key.ToWIFC()
-
-	/*
-		pubbytesuncompressed := key.PublicKey.ToBytesUncompressed()
-		pubbytesuncompressedstr := byteString(pubbytesuncompressed)
-
-		brain.PublicKey = pubbytesuncompressedstr[0:65]
-
-		pubbytescompressed := key.PublicKey.ToBytes()
-
-		brain.CompressedPublicKey = byteString(pubbytescompressed)
-
-		brain.Scripthash = scripthash(brain.PublicKey)
-		brain.CompressedScripthash = scripthash(brain.CompressedPublicKey)
-	*/
+	brain.Address = addr.EncodeAddress()
+	brain.PrivkeyWIF = wif.String()
+	brain.CompressedAddress = addrC.EncodeAddress()
+	brain.CompressedPrivkeyWIF = wifC.String()
 
 	return brain
 }
-
-func byteString(b []byte) (s string) {
-	s = ""
-	for i := 0; i < len(b); i++ {
-		s += fmt.Sprintf("%02X", b[i])
-	}
-	return s
-}
-
-/*
-func scripthash(s string) string {
-	return reverse(scriptPubKey(s))
-}
-
-func reverse(s []byte) (result string) { // see https://electrumx.readthedocs.io/en/latest/protocol-basics.html#script-hashes
-
-	var res []byte
-
-	for i := len(s) - 2; i >= 0; i = i - 2 {
-		res = append(res, s[i])
-		res = append(res, s[i+1])
-	}
-
-	return string(res)
-}
-*/
