@@ -4,7 +4,6 @@
 lognet = true # log network's activity (default: false)
 nostats = false # disable statistics' log (default: true)
 logresult = false # log positive results
-logbrainhash = true # log how many brain addresses are generated per second and per minute
 
 [conn]
 maxconn = -1 #  max electrum's connections ( default: -1 unlimited )
