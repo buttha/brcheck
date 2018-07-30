@@ -69,7 +69,7 @@ func main() {
 	}()
 
 	// stats
-	var totaltests, minutetests, found uint64
+	var totaltests, minutetests, found, brainsgenerated uint64
 	if config.Log.Nostats == false {
 		start := time.Now() // for future use
 		_ = start
@@ -77,9 +77,11 @@ func main() {
 		go func() {
 			for {
 				<-statsChan
-				avgmin := float64(float64(minutetests) / 60)
-				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d\n", totaltests, minutetests, avgmin, found)
+				avgmin := float64(minutetests) / 60.0
+				brainsgeneratedpersec := float64(brainsgenerated) / 60.0
+				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d | Brains generated: %d (%.2f/s)\n", totaltests, minutetests, avgmin, found, brainsgenerated, brainsgeneratedpersec)
 				minutetests = 0
+				brainsgenerated = 0
 			}
 		}()
 	}
@@ -139,6 +141,7 @@ func main() {
 			for _, tpass := range tpasses { // convert
 				address = BrainGenerator(tpass)
 				insertqueue = append(insertqueue, address)
+				brainsgenerated++
 			}
 			for _, taddr := range insertqueue { // write
 				mutexSQL.Lock()
