@@ -7,10 +7,9 @@ import (
 )
 
 type configLog struct {
-	Lognet       bool
-	Nostats      bool
-	Logresult    bool
-	Logbrainhash bool
+	Lognet    bool
+	Nostats   bool
+	Logresult bool
 }
 
 type configConn struct {
@@ -40,7 +39,6 @@ func ParseConfig() (Config, error) {
 	paramMaxconn := flag.Int("maxconn", -1, "max electrum's connections (-1 = unlimited)")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
-	paramLogbrainhash := flag.Bool("logbrainhash", true, "log how many brain addresses are generated per second and per minute")
 	paramResetconn := flag.Int("resetconn", 100, " reset connection with an electrum peer after N requests")
 	paramDbFile := flag.String("dbfile", "", "database filename")
 	paramDbPrefix := flag.String("dbprefix", "", "tablenames prefix")
@@ -53,7 +51,6 @@ func ParseConfig() (Config, error) {
 	configuration.Conn.Resetconn = *paramResetconn
 	configuration.Db.Dbfile = *paramDbFile
 	configuration.Log.Logresult = *paramLogresult
-	configuration.Log.Logbrainhash = *paramLogbrainhash
 
 	if *paramConfigFile != "" { // read config file
 		if _, err := toml.DecodeFile(*paramConfigFile, &configuration); err != nil {
@@ -70,8 +67,6 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Nostats = *paramNostats
 		case "logresult":
 			configuration.Log.Logresult = *paramLogresult
-		case "logbrainhash":
-			configuration.Log.Logbrainhash = *paramLogbrainhash
 		case "maxconn":
 			configuration.Conn.Maxconn = *paramMaxconn
 		case "resetconn":
