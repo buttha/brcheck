@@ -136,9 +136,18 @@ func main() {
 			}
 			rows.Close()
 			mutexSQL.Unlock()
+			startgen := time.Now()
+			numgen := 0
 			for _, tpass := range tpasses { // convert
 				address = BrainGenerator(tpass)
 				insertqueue = append(insertqueue, address)
+				numgen++
+			}
+			stopgen := time.Now()
+			timegen := stopgen.Sub(startgen).Seconds
+			rate := float64(numgen) / timegen()
+			if config.Log.Logbrainhash {
+				log.Println("Brainhash: " + strconv.FormatFloat(rate, 'f', 2, 64) + "b/s | " + strconv.FormatFloat(rate*60, 'f', 2, 64) + "b/min")
 			}
 			for _, taddr := range insertqueue { // write
 				mutexSQL.Lock()
