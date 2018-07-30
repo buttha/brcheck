@@ -43,11 +43,12 @@ func openDb() (*sql.DB, error) {
 	}
 
 	sql = `
-	CREATE TABLE IF NOT EXISTS ` + config.Db.Dbprefix + `queue (
-		Passphrase primary key,
-		Inserted DEFAULT CURRENT_TIMESTAMP
-	)
-	`
+		CREATE TABLE IF NOT EXISTS ` + config.Db.Dbprefix + `queue (
+			Passphrase primary key,
+			Inserted DEFAULT CURRENT_TIMESTAMP
+		)
+		`
+
 	_, err = db.Exec(sql)
 	if err != nil {
 		return db, err
@@ -155,10 +156,12 @@ func testingDb(passphrase string, db *sql.DB) error {
 }
 
 func closeDb(db *sql.DB) error {
+	mutexSQL.Lock()
 	_, err := db.Exec("UPDATE " + config.Db.Dbprefix + "brains SET testing=0")
 	if err != nil {
 		return err
 	}
 	db.Close()
+	mutexSQL.Unlock()
 	return nil
 }

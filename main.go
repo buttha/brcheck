@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 )
 
@@ -70,14 +71,14 @@ func main() {
 	// stats
 	var totaltests, minutetests, found uint64
 	if config.Log.Nostats == false {
-		start := time.Now()
+		start := time.Now() // for future use
+		_ = start
 		statsChan := time.NewTicker(time.Second * 60).C
 		go func() {
 			for {
 				<-statsChan
-				avg := float64(totaltests) / time.Since(start).Seconds()
 				avgmin := float64(float64(minutetests) / 60)
-				log.Printf("[STATS] Total tests: %d | Average  %.2f tests/s | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d\n", totaltests, avg, minutetests, avgmin, found)
+				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d\n", totaltests, minutetests, avgmin, found)
 				minutetests = 0
 			}
 		}()
@@ -85,8 +86,8 @@ func main() {
 
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
 
-	finishedscanning := make(chan bool) // finished reading stdin
-	finishedtesting := make(chan bool)  // finished testing passphrases
+	finishedqueue := make(chan bool)   // finished reading queue
+	finishedtesting := make(chan bool) // finished testing passphrases
 
 	activetests := 0
 	go func() { // manage electrum's results
@@ -95,10 +96,10 @@ func main() {
 			case nottested = <-nottestedchan:
 				wordschan <- nottested // resubmit to another server
 			case result = <-resultschan: // here it's the result
-				activetests--
 				mutexSQL.Lock()
 				err = updateDb(result, db)
 				mutexSQL.Unlock()
+				activetests--
 				if err != nil {
 					log.Println("error writing a result in db: " + err.Error())
 				}
@@ -114,30 +115,32 @@ func main() {
 		}
 	}()
 
-	go func() { // test db data
-		readinginput := true
+	go func() { // manage queue
 		for {
-			select {
-			case <-finishedscanning:
-				readinginput = false
-			default:
-			}
-
-			// elaborate queue
+			numqrows := 0
 			mutexSQL.Lock()
-			rows, err := db.Query("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT 10")
+			limit := len(connectedpeers) * 2
+			if limit < 10 {
+				limit = 10
+			}
+			rows, err := db.Query("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT " + strconv.Itoa(limit))
 			checkErr("during SELECT queue rows to elaborate", err)
 			var insertqueue []BrainAddress
 			var tpass string
-			for rows.Next() {
+			var tpasses []string
+			for rows.Next() { // read
 				err = rows.Scan(&tpass)
 				checkErr("reading queue row to process", err)
-				address = BrainGenerator(tpass)
-				insertqueue = append(insertqueue, address)
+				tpasses = append(tpasses, tpass)
+				numqrows++
 			}
 			rows.Close()
 			mutexSQL.Unlock()
-			for _, taddr := range insertqueue {
+			for _, tpass := range tpasses { // convert
+				address = BrainGenerator(tpass)
+				insertqueue = append(insertqueue, address)
+			}
+			for _, taddr := range insertqueue { // write
 				mutexSQL.Lock()
 				err = insertDb(taddr, db)
 				checkErr("inserting in db a row to test:", err)
@@ -146,11 +149,26 @@ func main() {
 				mutexSQL.Unlock()
 			}
 
+			if numqrows == 0 {
+				finishedqueue <- true
+			}
+		}
+	}()
+
+	go func() { // test db data
+		queueempty := false
+		for {
+			select {
+			case <-finishedqueue:
+				queueempty = true
+			default:
+			}
+
 			// elaborate brains
 			numrows := 0
-			var checking []string // used to mark a line as under testing
+			var undertest []BrainAddress
 			mutexSQL.Lock()
-			rows, err = db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL ORDER BY Inserted")
+			rows, err := db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL ORDER BY Inserted")
 			checkErr("during SELECT rows to test", err)
 			var (
 				tPassphrase           string
@@ -164,29 +182,26 @@ func main() {
 				err = rows.Scan(&tPassphrase, &tAddress, &tPrivkeyWIF, &tCompressedAddress, &tCompressedPrivkeyWIF)
 				checkErr("reading row to test", err)
 				numrows++
-				select {
-				case wordschan <- BrainAddress{
+				undertest = append(undertest, BrainAddress{
 					Passphrase:           tPassphrase,
 					Address:              tAddress,
 					PrivkeyWIF:           tPrivkeyWIF,
 					CompressedAddress:    tCompressedAddress,
 					CompressedPrivkeyWIF: tCompressedPrivkeyWIF,
-				}:
-					checking = append(checking, tPassphrase)
-					activetests++
-				default:
-				}
+				})
 			}
 			rows.Close()
 			mutexSQL.Unlock()
-			for _, undercheck := range checking { // mark line as under testing
+			for _, totest := range undertest { // mark line as under testing
+				wordschan <- totest
+				activetests++
 				mutexSQL.Lock()
-				err = testingDb(undercheck, db)
+				err = testingDb(totest.Passphrase, db)
 				checkErr("setting test flag", err)
 				mutexSQL.Unlock()
 			}
 
-			if numrows == 0 && !readinginput && activetests == 0 {
+			if numrows == 0 && queueempty && activetests == 0 {
 				finishedtesting <- true
 				return
 			}
@@ -197,16 +212,24 @@ func main() {
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
 
-	mutexSQL.Lock()
-	for scanner.Scan() {
-		err = insertQueueDb(scanner.Text(), db)
-		if err != nil {
-			log.Println("error inserting in db queue a row to test: " + err.Error())
+	// check if thereis something to read from stdin
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		mutexSQL.Lock()
+		tx, err := db.Begin() // init transaction
+		checkErr("feeding queue from stdin ", err)
+		for scanner.Scan() {
+			err = insertQueueDb(scanner.Text(), db)
+			if err != nil {
+				log.Println("error inserting in db queue a row to test: " + err.Error())
+				tx.Rollback() // rollback transaction
+				break
+			}
 		}
+		tx.Commit() // commit transaaction
+		mutexSQL.Unlock()
 	}
-	mutexSQL.Unlock()
-	finishedscanning <- true // say "I've finished reading from stdin"
-	<-finishedtesting        // wait the end of tests
+	<-finishedtesting // wait the end of tests
 
 }
 
