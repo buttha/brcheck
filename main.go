@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync/atomic"
 	"time"
 )
@@ -158,46 +157,28 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 // goqueue: manage queue
 func goqueue(finishedqueue chan bool) {
 	var address BrainAddress
+	var pass string
 	for {
-		numqrows := 0
 		mutexSQL.Lock()
-		limit := len(connectedpeers)
-		if limit < 10 {
-			limit = 10
-		}
-		limit = 1
-		rows, err := db.Query("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT " + strconv.Itoa(limit))
-		checkErr("during SELECT queue rows to elaborate", err)
-		var insertqueue []BrainAddress
-		var tpass string
-		var tpasses []string
-		for rows.Next() { // read
-			err = rows.Scan(&tpass)
-			checkErr("reading queue row to process", err)
-			tpasses = append(tpasses, tpass)
-			numqrows++
-		}
-		rows.Close()
-		mutexSQL.Unlock()
-		for _, tpass := range tpasses { // convert
-			address = BrainGenerator(tpass)
-			insertqueue = append(insertqueue, address)
-			atomic.AddUint64(&statbrainsgenerated, 1)
-		}
-		mutexSQL.Lock()
-		tx, err := db.Begin()
-		for _, taddr := range insertqueue { // write
-			err = insertDb(taddr, db)
-			checkErr("inserting in db a row to test:", err)
-			err = deleteQueueDb(taddr.Passphrase, db)
-			checkErr("removing a queue line", err)
-		}
-		tx.Commit()
+		err := db.QueryRow("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT 1").Scan(&pass)
 		mutexSQL.Unlock()
 
-		if numqrows == 0 {
+		switch {
+		case err == sql.ErrNoRows:
 			finishedqueue <- true
+		case err != nil:
+			checkErr("during SELECT queue row to elaborate", err)
 		}
+
+		address = BrainGenerator(pass)
+		atomic.AddUint64(&statbrainsgenerated, 1)
+
+		mutexSQL.Lock()
+		err = insertDb(address, db)
+		checkErr("inserting in db a row to test:", err)
+		err = deleteQueueDb(pass, db)
+		checkErr("removing a queue line", err)
+		mutexSQL.Unlock()
 	}
 }
 
