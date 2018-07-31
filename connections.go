@@ -11,7 +11,8 @@ import (
 	"github.com/buttha/electrum"
 )
 
-var mutex = &sync.Mutex{}
+var mutexconnectedpeers = &sync.Mutex{}
+var mutexdiscoveredpeers = &sync.Mutex{}
 
 /*
 startup peers ( from https://github.com/kyuupichan/electrumx/blob/master/electrumx/lib/coins.py )
@@ -144,7 +145,8 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		return
 	}
 
-	mutex.Lock()
+	mutexconnectedpeers.Lock()
+
 	connectedpeers[peer.Name] = connectedpeer{
 		peer:          peer,
 		connection:    client,
@@ -153,9 +155,13 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		resultschan:   resultschan,
 	}
 
+	mutexconnectedpeers.Unlock()
+
 	if config.Log.Lognet {
 		log.Printf("connected to: %s (# peers: %d)", peer.Name, len(connectedpeers))
 	}
+
+	mutexdiscoveredpeers.Lock()
 
 	discoveredpeers[peer.Name] = peer
 
@@ -166,7 +172,8 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 			Features: dpeer.Features,
 		}
 	}
-	mutex.Unlock()
+
+	mutexdiscoveredpeers.Unlock()
 
 	go serveRequests(connectedpeers[peer.Name])
 
@@ -303,7 +310,7 @@ func servererr(peer connectedpeer, req BrainAddress, operation string, err error
 }
 
 func deletepeer(peer connectedpeer) {
-	mutex.Lock()
+	mutexconnectedpeers.Lock()
 	delete(connectedpeers, peer.peer.Name)
-	mutex.Unlock()
+	mutexconnectedpeers.Unlock()
 }
