@@ -6,7 +6,6 @@ nostats = false # disable statistics' log (default: true)
 logresult = true # log positive results
 
 [conn]
-maxconn = -1 #  max electrum's connections ( default: -1 unlimited )
 resetconn = 100 # reset connection with an electrum peer after N requests ( default: 100 )
 # ^^^^^ this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT
 

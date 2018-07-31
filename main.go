@@ -59,6 +59,7 @@ func main() {
 	stats() // manage statistics
 
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
+	go Keepconnections(wordschan, nottestedchan, resultschan)      // peers discovery
 
 	finishedqueue := make(chan bool)   // finished reading queue
 	finishedtesting := make(chan bool) // finished testing passphrases

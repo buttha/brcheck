@@ -13,7 +13,6 @@ type configLog struct {
 }
 
 type configConn struct {
-	Maxconn   int
 	Resetconn int
 }
 
@@ -36,7 +35,6 @@ func ParseConfig() (Config, error) {
 
 	paramConfigFile := flag.String("config", "", "config file. Command line parameters has higher priority")
 	paramLognet := flag.Bool("lognet", true, "log network activity")
-	paramMaxconn := flag.Int("maxconn", -1, "max electrum's connections (-1 = unlimited)")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
 	paramResetconn := flag.Int("resetconn", 100, " reset connection with an electrum peer after N requests")
@@ -47,7 +45,6 @@ func ParseConfig() (Config, error) {
 	// set default values
 	configuration.Log.Lognet = *paramLognet
 	configuration.Log.Nostats = *paramNostats
-	configuration.Conn.Maxconn = *paramMaxconn
 	configuration.Conn.Resetconn = *paramResetconn
 	configuration.Db.Dbfile = *paramDbFile
 	configuration.Log.Logresult = *paramLogresult
@@ -67,8 +64,6 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Nostats = *paramNostats
 		case "logresult":
 			configuration.Log.Logresult = *paramLogresult
-		case "maxconn":
-			configuration.Conn.Maxconn = *paramMaxconn
 		case "resetconn":
 			configuration.Conn.Resetconn = *paramResetconn
 		case "dbfile":
