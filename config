@@ -3,7 +3,7 @@
 [log]
 lognet = true # log network's activity (default: false)
 nostats = false # disable statistics' log (default: true)
-logresult = false # log positive results
+logresult = true # log positive results
 
 [conn]
 maxconn = -1 #  max electrum's connections ( default: -1 unlimited )

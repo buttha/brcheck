@@ -33,8 +33,8 @@ func BrainGenerator(passphrase string) BrainAddress {
 	sh := sha256.Sum256([]byte(passphrase)) // sha256
 
 	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), sh[:])
-	wif, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, false) // brain.PrivkeyWIF
-	wifC, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, true) // brain.CompressedPrivkeyWIF
+	wif, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, false)
+	wifC, _ := btcutil.NewWIF(privKey, &chaincfg.MainNetParams, true)
 	addr, _ := btcutil.NewAddressPubKey(pubKey.SerializeUncompressed(), &chaincfg.MainNetParams)
 	addrC, _ := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(), &chaincfg.MainNetParams)
 
