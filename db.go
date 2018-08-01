@@ -12,7 +12,7 @@ var insertStmt, updateStmt, deleteStmt, testingStmt, insertQueueStmt, deleteQueu
 var mutexSQL = &sync.Mutex{}
 
 func openDb() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", config.Db.Dbfile+"?cache=shared&mode=rwc")
+	db, err := sql.Open("sqlite3", config.Db.Dbfile+"?cache=shared&mode=rwc&_loc=auto&_journal_mode=WAL")
 	if err != nil {
 		return db, err
 	}
@@ -32,9 +32,7 @@ func openDb() (*sql.DB, error) {
 		UnconfirmedCompressed,
 		LastTxTimeCompressed,
 		NumTxCompressed,
-		Inserted DEFAULT CURRENT_TIMESTAMP,
-		testing DEFAULT 0,
-		Checked 	
+		Inserted DEFAULT CURRENT_TIMESTAMP
 	)
 	`
 	_, err = db.Exec(sql)
@@ -45,6 +43,7 @@ func openDb() (*sql.DB, error) {
 	sql = `
 		CREATE TABLE IF NOT EXISTS ` + config.Db.Dbprefix + `queue (
 			Passphrase primary key,
+			testing DEFAULT 0,
 			Inserted DEFAULT CURRENT_TIMESTAMP
 		)
 		`
@@ -71,35 +70,17 @@ func openDb() (*sql.DB, error) {
 	}
 
 	insertStmt, err = db.Prepare(`
-	INSERT OR IGNORE INTO ` + config.Db.Dbprefix + `brains 
-	(Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF) 
-	values(?,?,?,?,?)
-	`)
-	if err != nil {
-		return db, err
-	}
-
-	updateStmt, err = db.Prepare(`
-	UPDATE ` + config.Db.Dbprefix + `brains 
-	SET Confirmed=?, Unconfirmed=?, LastTxTime=?, NumTx=?, 
-	ConfirmedCompressed=?, UnconfirmedCompressed=?, LastTxTimeCompressed=?, NumTxCompressed=?,
-	testing=0, Checked=datetime('now')
-	WHERE Passphrase=?
-	`)
-	if err != nil {
-		return db, err
-	}
-
-	deleteStmt, err = db.Prepare(`
-	DELETE FROM ` + config.Db.Dbprefix + `brains 
-	WHERE Passphrase=?
+	INSERT OR REPLACE INTO ` + config.Db.Dbprefix + `brains 
+	(Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF, 
+	Confirmed, Unconfirmed, LastTxTime, NumTx, ConfirmedCompressed, UnconfirmedCompressed, LastTxTimeCompressed, NumTxCompressed) 
+	values(?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return db, err
 	}
 
 	testingStmt, err = db.Prepare(`
-	UPDATE ` + config.Db.Dbprefix + `brains
+	UPDATE ` + config.Db.Dbprefix + `queue
 	SET testing=1
 	WHERE Passphrase=?
 	`)
@@ -126,21 +107,8 @@ func deleteQueueDb(value string, db *sql.DB) error {
 	return nil
 }
 
-func insertDb(address BrainAddress, db *sql.DB) error {
-	_, err := insertStmt.Exec(address.Passphrase, address.Address, address.PrivkeyWIF, address.CompressedAddress, address.CompressedPrivkeyWIF)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func updateDb(res BrainResult, db *sql.DB) error {
-	var err error
-	if res.NumTx+res.NumTxCompressed == 0 {
-		_, err = deleteStmt.Exec(res.Address.Passphrase)
-	} else {
-		_, err = updateStmt.Exec(res.Confirmed, res.Unconfirmed, res.LastTxTime, res.NumTx, res.ConfirmedCompressed, res.UnconfirmedCompressed, res.LastTxTimeCompressed, res.NumTxCompressed, res.Address.Passphrase)
-	}
+func insertDb(result BrainResult, db *sql.DB) error {
+	_, err := insertStmt.Exec(result.Address.Passphrase, result.Address.Address, result.Address.PrivkeyWIF, result.Address.CompressedAddress, result.Address.CompressedPrivkeyWIF, result.Confirmed, result.Unconfirmed, result.LastTxTime, result.NumTx, result.ConfirmedCompressed, result.UnconfirmedCompressed, result.LastTxTimeCompressed, result.NumTxCompressed)
 	if err != nil {
 		return err
 	}
@@ -157,7 +125,7 @@ func testingDb(passphrase string, db *sql.DB) error {
 
 func closeDb(db *sql.DB) error {
 	mutexSQL.Lock()
-	_, err := db.Exec("UPDATE " + config.Db.Dbprefix + "brains SET testing=0")
+	_, err := db.Exec("UPDATE " + config.Db.Dbprefix + "queue SET testing=0")
 	if err != nil {
 		return err
 	}

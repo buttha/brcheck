@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"time"
+	// _ "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
 )
 
 // BrainResult for tests' result
@@ -30,6 +31,12 @@ var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // fo
 var activetests uint64
 
 func main() {
+	//defer profile.Start(profile.MemProfile).Stop() // memory
+	//defer profile.Start().Stop() // cpu
+	/*
+		go tool pprof --pdf ~/go/bin/yourbinary /var/path/to/file.pprof > file.pdf
+		see https://flaviocopes.com/golang-profiling/
+	*/
 
 	wordschan := make(chan BrainAddress)     // chan for string to test
 	nottestedchan := make(chan BrainAddress) // if a goroutine failed to test a string (ex. server disconnected, ecc...) then string will be send back through this channel
@@ -63,9 +70,8 @@ func main() {
 	finishedqueue := make(chan bool)   // finished reading queue
 	finishedtesting := make(chan bool) // finished testing passphrases
 
-	go goresults(wordschan, nottestedchan, resultschan)   // manage electrum's results
-	go goqueue(finishedqueue)                             // manage queue
-	go gotests(finishedqueue, finishedtesting, wordschan) // test db data
+	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue) // manage electrum's results
+	go goqueue(wordschan, finishedqueue)                                                // manage queue
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
@@ -127,112 +133,72 @@ func stats() {
 }
 
 // goresults: manage electrum's results
-func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue chan bool) {
 	var nottested BrainAddress
 	var result BrainResult
 	for {
+
+		select {
+		case <-finishedqueue:
+			if atomic.LoadUint64(&activetests) == 0 {
+				finishedtesting <- true
+			}
+		default:
+		}
+
 		select {
 		case nottested = <-nottestedchan:
 			wordschan <- nottested // resubmit to another server
 		case result = <-resultschan: // here it's the result
-			mutexSQL.Lock()
-			err := updateDb(result, db)
-			mutexSQL.Unlock()
 			atomic.AddUint64(&activetests, ^uint64(0)) // activetests--
-			if err != nil {
-				log.Println("error writing a result in db: " + err.Error())
-			}
+			mutexSQL.Lock()
 			if result.NumTx+result.NumTxCompressed != 0 {
 				if config.Log.Logresult {
 					log.Printf("%+v\n", result)
 				}
 				atomic.AddUint64(&statfound, 1)
+
+				err := insertDb(result, db)
+				if err != nil {
+					log.Println("error writing a result in db: " + err.Error())
+				}
 			}
+			err := deleteQueueDb(result.Address.Passphrase, db)
+			checkErr("removing a queue line", err)
+			mutexSQL.Unlock()
 			atomic.AddUint64(&stattotaltests, 1) // stats
 			atomic.AddUint64(&statminutetests, 1)
+		default:
 		}
 	}
 }
 
 // goqueue: manage queue
-func goqueue(finishedqueue chan bool) {
+func goqueue(wordschan chan BrainAddress, finishedqueue chan bool) {
 	var address BrainAddress
 	var pass string
 	for {
 		mutexSQL.Lock()
-		err := db.QueryRow("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue ORDER BY Inserted LIMIT 1").Scan(&pass)
+		err := db.QueryRow("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue WHERE testing=0 ORDER BY Inserted LIMIT 1").Scan(&pass)
 		mutexSQL.Unlock()
 
 		switch {
 		case err == sql.ErrNoRows:
 			finishedqueue <- true
+			time.Sleep(100 * time.Millisecond)
+			continue
 		case err != nil:
 			checkErr("during SELECT queue row to elaborate", err)
 		}
 
 		address = BrainGenerator(pass)
 		atomic.AddUint64(&statbrainsgenerated, 1)
-
+		wordschan <- address
+		atomic.AddUint64(&activetests, 1) // activetests++
 		mutexSQL.Lock()
-		err = insertDb(address, db)
-		checkErr("inserting in db a row to test:", err)
-		err = deleteQueueDb(pass, db)
-		checkErr("removing a queue line", err)
+		err = testingDb(address.Passphrase, db)
+		checkErr("setting test flag", err)
 		mutexSQL.Unlock()
-	}
-}
-
-// gotests: test db data
-func gotests(finishedqueue, finishedtesting chan bool, wordschan chan BrainAddress) {
-	queueempty := false
-	for {
-		select {
-		case <-finishedqueue:
-			queueempty = true
-		default:
-		}
-
-		// elaborate brains
-		numrows := 0
-		var undertest []BrainAddress
-		mutexSQL.Lock()
-		rows, err := db.Query("SELECT Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF FROM " + config.Db.Dbprefix + "brains WHERE testing=0 AND Checked IS NULL ORDER BY Inserted")
-		checkErr("during SELECT rows to test", err)
-		var (
-			tPassphrase           string
-			tAddress              string
-			tPrivkeyWIF           string
-			tCompressedAddress    string
-			tCompressedPrivkeyWIF string
-		)
-
-		for rows.Next() {
-			err = rows.Scan(&tPassphrase, &tAddress, &tPrivkeyWIF, &tCompressedAddress, &tCompressedPrivkeyWIF)
-			checkErr("reading row to test", err)
-			numrows++
-			undertest = append(undertest, BrainAddress{
-				Passphrase:           tPassphrase,
-				Address:              tAddress,
-				PrivkeyWIF:           tPrivkeyWIF,
-				CompressedAddress:    tCompressedAddress,
-				CompressedPrivkeyWIF: tCompressedPrivkeyWIF,
-			})
-		}
-		rows.Close()
-		mutexSQL.Unlock()
-		for _, totest := range undertest { // mark line as under testing
-			wordschan <- totest
-			atomic.AddUint64(&activetests, 1) // activetests++
-			mutexSQL.Lock()
-			err = testingDb(totest.Passphrase, db)
-			checkErr("setting test flag", err)
-			mutexSQL.Unlock()
-		}
-
-		if numrows == 0 && queueempty && atomic.LoadUint64(&activetests) == 0 {
-			finishedtesting <- true
-			return
-		}
 
 	}
 }

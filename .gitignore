@@ -1,6 +1,8 @@
 .vscode/*
 brcheck.exe
 brcheck
-res.txt
+*.txt
 .DS_Store
 *.db
+debug
+*.pdf
