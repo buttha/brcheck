@@ -12,7 +12,7 @@ var insertStmt, updateStmt, deleteStmt, testingStmt, insertQueueStmt, deleteQueu
 var mutexSQL = &sync.Mutex{}
 
 func openDb() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", config.Db.Dbfile+"?cache=shared&mode=rwc&_loc=auto&_journal_mode=WAL")
+	db, err := sql.Open("sqlite3", config.Db.Dbfile+"?cache=shared&mode=rwc&_loc=auto")
 	if err != nil {
 		return db, err
 	}
