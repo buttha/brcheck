@@ -3,12 +3,17 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	// _ "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
 )
 
@@ -26,7 +31,7 @@ type BrainResult struct {
 }
 
 var config Config
-var db *sql.DB
+var exportdb *sql.DB
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
 var activetests uint64
 
@@ -48,19 +53,36 @@ func main() {
 		return
 	}
 	config = cfg
-	if config.Db.Dbfile == "" {
-		fmt.Println("Missing database file name. Use config file or command line parameter -dbfile")
+
+	if config.Db.Dbdir == "" {
+		fmt.Println("Missing database directory. Use config file or command line parameter -dbfile")
 		return
 	}
 
-	db, err = openDb()
+	db, err := leveldb.OpenFile(config.Db.Dbdir, nil)
 	if err != nil {
-		fmt.Println("Error opening db:", err)
+		fmt.Println("Error opening working database:", err)
 		return
 	}
 	defer closeDb(db)
 
-	manageshutdown() // detect program interruption
+	fixQueue(db) // reset queue rows from testing -> totest status
+
+	if config.Db.Exportdbfile != "" {
+		exportdb, err = opennExportDb()
+		if err != nil {
+			fmt.Println("Error opening export db:", err)
+			return
+		}
+		defer closeExportDb(exportdb)
+	}
+
+	/*
+		dumpdb(db)
+		return
+	*/
+
+	manageshutdown(db, exportdb) // detect program interruption
 
 	stats() // manage statistics
 
@@ -70,8 +92,8 @@ func main() {
 	finishedqueue := make(chan bool)   // finished reading queue
 	finishedtesting := make(chan bool) // finished testing passphrases
 
-	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue) // manage electrum's results
-	go goqueue(wordschan, finishedqueue)                                                // manage queue
+	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue, db) // manage electrum's results
+	go goqueue(wordschan, finishedqueue, db)                                                // manage queue
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
@@ -79,38 +101,27 @@ func main() {
 	// check if thereis something to read from stdin
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		mutexSQL.Lock()
-		tx, err := db.Begin() // init transaction
-		checkErr("feeding queue from stdin ", err)
+		log.Println("start reading stdin")
 		for scanner.Scan() {
-			err = insertQueueDb(scanner.Text(), db)
+			err = db.Put([]byte("totest|"+scanner.Text()), []byte("1"), nil)
 			if err != nil {
-				log.Println("error inserting in db queue a row to test: " + err.Error())
-				tx.Rollback() // rollback transaction
-				break
+				fmt.Println("error writing stdin to db:", err.Error())
+				return
 			}
 		}
-		tx.Commit() // commit transaaction
-		mutexSQL.Unlock()
+		log.Println("finished reading stdin")
 	}
 	<-finishedtesting // wait the end of tests
-
 }
 
-func checkErr(where string, err error) {
-	if err != nil {
-		log.Printf("error " + where + ":")
-		panic(err)
-	}
-}
-
-func manageshutdown() { // detect program interrupt
+func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
 		closeDb(db)
+		closeExportDb(exportdb)
 		log.Println("...done")
 		os.Exit(0)
 	}()
@@ -133,7 +144,7 @@ func stats() {
 }
 
 // goresults: manage electrum's results
-func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue chan bool) {
+func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue chan bool, db *leveldb.DB) {
 	var nottested BrainAddress
 	var result BrainResult
 	for {
@@ -151,21 +162,21 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			wordschan <- nottested // resubmit to another server
 		case result = <-resultschan: // here it's the result
 			atomic.AddUint64(&activetests, ^uint64(0)) // activetests--
-			mutexSQL.Lock()
 			if result.NumTx+result.NumTxCompressed != 0 {
 				if config.Log.Logresult {
 					log.Printf("%+v\n", result)
 				}
 				atomic.AddUint64(&statfound, 1)
-
-				err := insertDb(result, db)
+				resjson, _ := json.Marshal(result)
+				err := db.Put([]byte("result|"+result.Address.Passphrase), resjson, nil)
 				if err != nil {
 					log.Println("error writing a result in db: " + err.Error())
 				}
 			}
-			err := deleteQueueDb(result.Address.Passphrase, db)
-			checkErr("removing a queue line", err)
-			mutexSQL.Unlock()
+			err := db.Delete([]byte("testing|"+result.Address.Passphrase), nil)
+			if err != nil {
+				log.Println("error removing a queue item from testing status: " + err.Error())
+			}
 			atomic.AddUint64(&stattotaltests, 1) // stats
 			atomic.AddUint64(&statminutetests, 1)
 		default:
@@ -174,31 +185,57 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 }
 
 // goqueue: manage queue
-func goqueue(wordschan chan BrainAddress, finishedqueue chan bool) {
+func goqueue(wordschan chan BrainAddress, finishedqueue chan bool, db *leveldb.DB) {
 	var address BrainAddress
 	var pass string
 	for {
-		mutexSQL.Lock()
-		err := db.QueryRow("SELECT Passphrase FROM " + config.Db.Dbprefix + "queue WHERE testing=0 ORDER BY Inserted LIMIT 1").Scan(&pass)
-		mutexSQL.Unlock()
+		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
 
-		switch {
-		case err == sql.ErrNoRows:
+		if iter.Next() {
+
+			key := iter.Key()
+			iter.Release()
+			pass = strings.TrimLeft(string(key), "totest|")
+			address = BrainGenerator(pass)
+			atomic.AddUint64(&statbrainsgenerated, 1)
+			wordschan <- address
+			atomic.AddUint64(&activetests, 1) // activetests++
+
+			err := db.Put([]byte("testing|"+pass), []byte("1"), nil)
+			if err != nil {
+				log.Println("error setting totest -> testing a queue item: ", err.Error())
+				continue
+			}
+			err = db.Delete(key, nil)
+			if err != nil {
+				log.Println("error removing a testing queue row: ", err.Error())
+				continue
+			}
+
+		} else {
+			iter.Release()
 			finishedqueue <- true
 			time.Sleep(100 * time.Millisecond)
 			continue
-		case err != nil:
-			checkErr("during SELECT queue row to elaborate", err)
+		}
+		err := iter.Error()
+		if err != nil {
+			log.Println("error fetching queue to test: ", err.Error())
+			continue
 		}
 
-		address = BrainGenerator(pass)
-		atomic.AddUint64(&statbrainsgenerated, 1)
-		wordschan <- address
-		atomic.AddUint64(&activetests, 1) // activetests++
-		mutexSQL.Lock()
-		err = testingDb(address.Passphrase, db)
-		checkErr("setting test flag", err)
-		mutexSQL.Unlock()
-
 	}
+}
+
+func dumpdb(db *leveldb.DB) {
+	iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
+	for iter.Next() {
+		// Remember that the contents of the returned slice should not be modified, and
+		// only valid until the next call to Next.
+		key := iter.Key()
+		value := iter.Value()
+		fmt.Println(string(key), string(value))
+	}
+	iter.Release()
+	return
 }

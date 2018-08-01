@@ -17,8 +17,9 @@ type configConn struct {
 }
 
 type configDb struct {
-	Dbfile   string
-	Dbprefix string
+	Dbdir          string
+	Exportdbfile   string
+	Exportdbprefix string
 }
 
 // Config : configuration type
@@ -37,16 +38,19 @@ func ParseConfig() (Config, error) {
 	paramLognet := flag.Bool("lognet", true, "log network activity")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
-	paramResetconn := flag.Int("resetconn", 100, " reset connection with an electrum peer after N requests")
-	paramDbFile := flag.String("dbfile", "", "database filename")
-	paramDbPrefix := flag.String("dbprefix", "", "tablenames prefix")
+	paramResetconn := flag.Int("resetconn", 300, " reset connection with an electrum peer after N requests")
+	paramDbdir := flag.String("dbdir", "", "working db directory")
+	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3)")
+	paramExportdbprefix := flag.String("exportdbprefix", "", "tablenames' prefix in export db")
 	flag.Parse()
 
 	// set default values
 	configuration.Log.Lognet = *paramLognet
 	configuration.Log.Nostats = *paramNostats
 	configuration.Conn.Resetconn = *paramResetconn
-	configuration.Db.Dbfile = *paramDbFile
+	configuration.Db.Dbdir = *paramDbdir
+	configuration.Db.Exportdbfile = *paramExportdbprefix
+	configuration.Db.Exportdbprefix = *paramExportdbprefix
 	configuration.Log.Logresult = *paramLogresult
 
 	if *paramConfigFile != "" { // read config file
@@ -66,10 +70,12 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Logresult = *paramLogresult
 		case "resetconn":
 			configuration.Conn.Resetconn = *paramResetconn
-		case "dbfile":
-			configuration.Db.Dbfile = *paramDbFile
-		case "dbprefix":
-			configuration.Db.Dbprefix = *paramDbPrefix
+		case "dbdir":
+			configuration.Db.Dbdir = *paramDbdir
+		case "exportdbfile":
+			configuration.Db.Exportdbfile = *paramExportdbfile
+		case "exportdbprefix":
+			configuration.Db.Exportdbprefix = *paramExportdbprefix
 		}
 	}
 	flag.Visit(visitor)
