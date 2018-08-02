@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	// "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	// "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
 )
 
 // BrainResult for tests' result
@@ -33,12 +33,14 @@ type BrainResult struct {
 var config Config
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
 var activetests uint64
+var exportingdb bool
 
 func main() {
 	//defer profile.Start(profile.MemProfile).Stop() // memory
 	//defer profile.Start().Stop() // cpu
 	/*
 		go tool pprof --pdf ~/go/bin/yourbinary /var/path/to/file.pprof > file.pdf
+		go tool pprof --text ~/go/bin/yourbinary /var/path/to/file.pprof > file.txt
 		see https://flaviocopes.com/golang-profiling/
 	*/
 
@@ -60,7 +62,7 @@ func main() {
 
 	db, err := leveldb.OpenFile(config.Db.Dbdir, nil)
 	if err != nil {
-		fmt.Println("Error opening working database:", err)
+		fmt.Println("Error opening working database "+config.Db.Dbdir+":", err)
 		return
 	}
 	defer closeDb(db)
@@ -78,6 +80,7 @@ func main() {
 			fmt.Println("Error opening export db:", err)
 			return
 		}
+		exportingdb = true
 		defer closeExportDb(exportdb)
 		if config.Db.Exportdbinterval > 0 {
 			exportdbcron(db, exportdb) // manage db export every exportdbinterval seconds
@@ -131,9 +134,11 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interr
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
-		doexportdb(db, exportdb)
+		if exportingdb {
+			doexportdb(db, exportdb)
+			closeExportDb(exportdb)
+		}
 		closeDb(db)
-		closeExportDb(exportdb)
 		log.Println("...done")
 		os.Exit(0)
 	}()

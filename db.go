@@ -1,5 +1,5 @@
 /*
-db entries are ( key = value):
+db entries are ( key = value ):
 
 totest|word = 1 : word in the queue waiting to be tested
 testing|word = 1 : word under electrum's test (totest|word is removed from db)

@@ -94,7 +94,7 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		Protocol:  "1.2",
 		KeepAlive: true,
 		TLS:       &tlsconfig,
-		//Reconnect: true,
+		// Reconnect: false,
 	})
 
 	if err != nil {
@@ -103,6 +103,7 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 
 	_, err = client.ServerVersion()
 	if err != nil {
+		client.Close()
 		return
 	}
 
