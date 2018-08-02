@@ -1,10 +1,22 @@
+/*
+db entries are ( key = value):
+
+totest|word = 1 : word in the queue waiting to be tested
+testing|word = 1 : word under electrum's test (totest|word is removed from db)
+result|word = {json} : a positive result is stored as json (testing|word is removed from db)
+
+when program starts and stops, testing|word are resetted into totest|word status, since we don't have a result yet
+*/
+
 package main
 
 import (
 	"database/sql"
-	"fmt"
+	"encoding/json"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -14,6 +26,8 @@ import (
 
 var insertStmt *sql.Stmt
 
+var mutexSQL = &sync.Mutex{}
+
 func opennExportDb() (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", config.Db.Exportdbfile+"?cache=shared&mode=rwc&_loc=auto")
 	if err != nil {
@@ -21,19 +35,19 @@ func opennExportDb() (*sql.DB, error) {
 	}
 
 	sql := `
-	CREATE TABLE IF NOT EXISTS ` + config.Db.Exportdbprefix + `brains (
+	CREATE TABLE IF NOT EXISTS ` + config.Db.Exportdbtable + ` (
 		Passphrase primary key,
+		Confirmed,
+		Unconfirmed,
+		ConfirmedCompressed,
+		UnconfirmedCompressed,
+		LastTxTime,
+		LastTxTimeCompressed,
 		Address,
 		PrivkeyWIF,         
 		CompressedAddress,   
 		CompressedPrivkeyWIF,
-		Confirmed,
-		Unconfirmed,
-		LastTxTime,
 		NumTx,
-		ConfirmedCompressed,
-		UnconfirmedCompressed,
-		LastTxTimeCompressed,
 		NumTxCompressed,
 		Inserted DEFAULT CURRENT_TIMESTAMP
 	)
@@ -44,7 +58,7 @@ func opennExportDb() (*sql.DB, error) {
 	}
 
 	insertStmt, err = db.Prepare(`
-	INSERT OR REPLACE INTO ` + config.Db.Exportdbprefix + `brains 
+	INSERT OR REPLACE INTO ` + config.Db.Exportdbtable + `
 	(Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF, 
 	Confirmed, Unconfirmed, LastTxTime, NumTx, ConfirmedCompressed, UnconfirmedCompressed, LastTxTimeCompressed, NumTxCompressed) 
 	values(?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -56,15 +70,48 @@ func opennExportDb() (*sql.DB, error) {
 	return db, err
 }
 
-/*
-func insertExportDb(result BrainResult, db *sql.DB) error {
-	_, err := insertStmt.Exec(result.Address.Passphrase, result.Address.Address, result.Address.PrivkeyWIF, result.Address.CompressedAddress, result.Address.CompressedPrivkeyWIF, result.Confirmed, result.Unconfirmed, result.LastTxTime, result.NumTx, result.ConfirmedCompressed, result.UnconfirmedCompressed, result.LastTxTimeCompressed, result.NumTxCompressed)
-	if err != nil {
-		return err
-	}
-	return nil
+func exportdbcron(db *leveldb.DB, exportdb *sql.DB) {
+	// manage db export every exportinterval seconds
+	exportdbChan := time.NewTicker(time.Second * time.Duration(config.Db.Exportdbinterval)).C
+	go func() {
+		for {
+			<-exportdbChan
+			doexportdb(db, exportdb)
+		}
+	}()
+
 }
-*/
+
+func doexportdb(db *leveldb.DB, exportdb *sql.DB) {
+	var brain BrainResult
+	for {
+		mutexSQL.Lock()
+		tx, err := exportdb.Begin() // init transaction
+		if err != nil {
+			log.Println("error starting exportdb transaction:", err.Error())
+			mutexSQL.Unlock()
+			break
+		}
+
+		iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
+		for iter.Next() {
+			err = json.Unmarshal(iter.Value(), &brain)
+			if err != nil {
+				log.Println("exportdb: error decoding a result row:", err.Error())
+				continue
+			}
+			_, err = insertStmt.Exec(brain.Address.Passphrase, brain.Address.Address, brain.Address.PrivkeyWIF, brain.Address.CompressedAddress, brain.Address.CompressedPrivkeyWIF, brain.Confirmed, brain.Unconfirmed, brain.LastTxTime, brain.NumTx, brain.ConfirmedCompressed, brain.UnconfirmedCompressed, brain.LastTxTimeCompressed, brain.NumTxCompressed)
+			if err != nil {
+				log.Println("exportdb: error writing a result row:", err.Error())
+				continue
+			}
+		}
+		iter.Release()
+		tx.Commit()
+		mutexSQL.Unlock()
+		break
+	}
+}
 
 func closeDb(db *leveldb.DB) {
 	fixQueue(db)
@@ -90,10 +137,10 @@ func fixQueue(db *leveldb.DB) {
 	iter.Release()
 	err := iter.Error()
 	if err != nil {
-		fmt.Println("error shutting down working db: ", err.Error())
+		log.Println("error shutting down working db: ", err.Error())
 	}
 }
 
-func closeExportDb(db *sql.DB) {
+func closeExportDb(exportdb *sql.DB) {
 	exportdb.Close()
 }

@@ -14,7 +14,7 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	// _ "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
+	// "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
 )
 
 // BrainResult for tests' result
@@ -31,7 +31,6 @@ type BrainResult struct {
 }
 
 var config Config
-var exportdb *sql.DB
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
 var activetests uint64
 
@@ -43,9 +42,9 @@ func main() {
 		see https://flaviocopes.com/golang-profiling/
 	*/
 
-	wordschan := make(chan BrainAddress)     // chan for string to test
-	nottestedchan := make(chan BrainAddress) // if a goroutine failed to test a string (ex. server disconnected, ecc...) then string will be send back through this channel
-	resultschan := make(chan BrainResult)    // tests' results
+	wordschan := make(chan BrainAddress, 100) // chan for string to test
+	nottestedchan := make(chan BrainAddress)  // if a goroutine failed to test a string (ex. server disconnected, ecc...) then string will be send back through this channel
+	resultschan := make(chan BrainResult)     // tests' results
 
 	cfg, err := ParseConfig() // reads command line params and config file
 	if err != nil {
@@ -55,7 +54,7 @@ func main() {
 	config = cfg
 
 	if config.Db.Dbdir == "" {
-		fmt.Println("Missing database directory. Use config file or command line parameter -dbfile")
+		fmt.Println("Missing database directory. Use config file or command line parameter -dbdir")
 		return
 	}
 
@@ -68,13 +67,23 @@ func main() {
 
 	fixQueue(db) // reset queue rows from testing -> totest status
 
+	var exportdb *sql.DB
 	if config.Db.Exportdbfile != "" {
+		if config.Db.Exportdbtable == "" {
+			fmt.Println("Missing export db tablename. Use config file or command line parameter -exportdbtable", err)
+			return
+		}
 		exportdb, err = opennExportDb()
 		if err != nil {
 			fmt.Println("Error opening export db:", err)
 			return
 		}
 		defer closeExportDb(exportdb)
+		if config.Db.Exportdbinterval > 0 {
+			exportdbcron(db, exportdb) // manage db export every exportdbinterval seconds
+		}
+		defer doexportdb(db, exportdb) // export db when finished
+
 	}
 
 	/*
@@ -91,9 +100,10 @@ func main() {
 
 	finishedqueue := make(chan bool)   // finished reading queue
 	finishedtesting := make(chan bool) // finished testing passphrases
+	finishedstdin := make(chan bool)   // finished reading stdin
 
 	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue, db) // manage electrum's results
-	go goqueue(wordschan, finishedqueue, db)                                                // manage queue
+	go goqueue(wordschan, finishedqueue, finishedstdin, db)                                 // manage queue
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
@@ -101,7 +111,7 @@ func main() {
 	// check if thereis something to read from stdin
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		log.Println("start reading stdin")
+		log.Println("Start reading stdin")
 		for scanner.Scan() {
 			err = db.Put([]byte("totest|"+scanner.Text()), []byte("1"), nil)
 			if err != nil {
@@ -109,9 +119,10 @@ func main() {
 				return
 			}
 		}
-		log.Println("finished reading stdin")
+		log.Println("Finished reading stdin")
 	}
-	<-finishedtesting // wait the end of tests
+	finishedstdin <- true // tell to goqueue we have finished reading stdin
+	<-finishedtesting     // wait the end of tests
 }
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
@@ -120,6 +131,7 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interr
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
+		doexportdb(db, exportdb)
 		closeDb(db)
 		closeExportDb(exportdb)
 		log.Println("...done")
@@ -149,12 +161,13 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 	var result BrainResult
 	for {
 
-		select {
-		case <-finishedqueue:
-			if atomic.LoadUint64(&activetests) == 0 {
+		if atomic.LoadUint64(&activetests) == 0 {
+			select {
+			case <-finishedqueue:
 				finishedtesting <- true
+				time.Sleep(100 * time.Millisecond)
+			default:
 			}
-		default:
 		}
 
 		select {
@@ -185,14 +198,15 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 }
 
 // goqueue: manage queue
-func goqueue(wordschan chan BrainAddress, finishedqueue chan bool, db *leveldb.DB) {
+func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin chan bool, db *leveldb.DB) {
 	var address BrainAddress
 	var pass string
+	var numrows uint64
 	for {
+		numrows = 0
 		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
-
-		if iter.Next() {
-
+		for iter.Next() {
+			numrows++
 			key := iter.Key()
 			iter.Release()
 			pass = strings.TrimLeft(string(key), "totest|")
@@ -211,19 +225,17 @@ func goqueue(wordschan chan BrainAddress, finishedqueue chan bool, db *leveldb.D
 				log.Println("error removing a testing queue row: ", err.Error())
 				continue
 			}
-
-		} else {
-			iter.Release()
-			finishedqueue <- true
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		err := iter.Error()
-		if err != nil {
-			log.Println("error fetching queue to test: ", err.Error())
-			continue
 		}
 
+		if numrows == 0 {
+			select {
+			case <-finishedstdin:
+				iter.Release()
+				finishedqueue <- true
+				time.Sleep(100 * time.Millisecond)
+			default:
+			}
+		}
 	}
 }
 

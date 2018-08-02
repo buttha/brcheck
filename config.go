@@ -17,9 +17,10 @@ type configConn struct {
 }
 
 type configDb struct {
-	Dbdir          string
-	Exportdbfile   string
-	Exportdbprefix string
+	Dbdir            string
+	Exportdbfile     string
+	Exportdbtable    string
+	Exportdbinterval uint64
 }
 
 // Config : configuration type
@@ -38,20 +39,22 @@ func ParseConfig() (Config, error) {
 	paramLognet := flag.Bool("lognet", true, "log network activity")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
-	paramResetconn := flag.Int("resetconn", 300, " reset connection with an electrum peer after N requests")
+	paramResetconn := flag.Int("resetconn", 500, "reset connection with an electrum peer after N requests")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3)")
-	paramExportdbprefix := flag.String("exportdbprefix", "", "tablenames' prefix in export db")
+	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
+	paramExportdbinterval := flag.Uint64("exportdbinterval", 0, "export every exportdbinterval seconds (0 to disable cron: db will be always exported when program stops)")
 	flag.Parse()
 
 	// set default values
 	configuration.Log.Lognet = *paramLognet
 	configuration.Log.Nostats = *paramNostats
+	configuration.Log.Logresult = *paramLogresult
 	configuration.Conn.Resetconn = *paramResetconn
 	configuration.Db.Dbdir = *paramDbdir
-	configuration.Db.Exportdbfile = *paramExportdbprefix
-	configuration.Db.Exportdbprefix = *paramExportdbprefix
-	configuration.Log.Logresult = *paramLogresult
+	configuration.Db.Exportdbfile = *paramExportdbfile
+	configuration.Db.Exportdbtable = *paramExportdbtable
+	configuration.Db.Exportdbinterval = *paramExportdbinterval
 
 	if *paramConfigFile != "" { // read config file
 		if _, err := toml.DecodeFile(*paramConfigFile, &configuration); err != nil {
@@ -74,8 +77,10 @@ func ParseConfig() (Config, error) {
 			configuration.Db.Dbdir = *paramDbdir
 		case "exportdbfile":
 			configuration.Db.Exportdbfile = *paramExportdbfile
-		case "exportdbprefix":
-			configuration.Db.Exportdbprefix = *paramExportdbprefix
+		case "exportdbtable":
+			configuration.Db.Exportdbtable = *paramExportdbtable
+		case "exportdbinterval":
+			configuration.Db.Exportdbinterval = *paramExportdbinterval
 		}
 	}
 	flag.Visit(visitor)
