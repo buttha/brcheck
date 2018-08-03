@@ -6,11 +6,11 @@ nostats = false # disable statistics' log (default: true)
 logresult = false # log positive results
 
 [conn]
-resetconn = 500 # reset connection with an electrum peer after N requests ( default: 100 )
+resetconn = 100 # reset connection with an electrum peer after N requests ( default: 100 )
 # ^^^^^ this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT
 
 [db]
 dbdir = "./database" # db directory
 exportdbfile = "./brcheck.db" # export database filename (sqlite3) 
 exportdbtable = "brains" # export db tablename
-exportdbinterval =  60 # export every exportinterval seconds (set to 0 to disable cron). db will be always exported when program stops
+exportdbinterval =  0 # export every exportinterval seconds (set to 0 to disable cron). db will be always exported when program stops

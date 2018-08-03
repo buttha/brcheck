@@ -6,4 +6,4 @@ brcheck
 *.db
 debug
 *.pdf
-leveldb
+database

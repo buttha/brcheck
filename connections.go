@@ -48,42 +48,70 @@ var connectingpeers = make(map[string]bool)          // peers under connection
 
 // Establishconnections manages electrum's peers connection / comunication / channels
 func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+	done := make(chan bool)
+	num := 0
 	// connect on startup peers (SSL only)
 	for _, peer := range bootpeers {
 		for _, feature := range peer.Features {
 			mutexconnectingpeers.Lock()
 			if strings.HasPrefix(feature, "s") && !connectingpeers[peer.Name] { // server supports SSL
 				connectingpeers[peer.Name] = true
-				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan)
+				num++
+				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan, done)
 			}
 			mutexconnectingpeers.Unlock()
+		}
+	}
+	if num > 0 {
+		for {
+			<-done
+			num--
+			if num == 0 {
+				break
+			}
 		}
 	}
 }
 
 // Keepconnections : reach and mantain max connection's number via peer discovery algo
 func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+	done := make(chan bool)
 	for {
 		mutexdiscoveredpeers.Lock()
+		mutexconnectedpeers.Lock()
+		mutexconnectingpeers.Lock()
+		num := 0
 		for _, disco := range discoveredpeers { // search for a peer...
-			if connectedpeers[disco.Name].connection == nil { // .... not already connected...
+			if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
 				for _, feat := range disco.Features { // ... which supports...
-					mutexconnectingpeers.Lock()
-					if strings.HasPrefix(feat, "s") && !connectingpeers[disco.Name] { // ... SSL
+					if strings.HasPrefix(feat, "s") { // ... SSL
 						connectingpeers[disco.Name] = true
-						go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan)
+						num++
+						go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan, done)
 					}
-					mutexconnectingpeers.Unlock()
+
 				}
 			}
 		}
+		mutexconnectingpeers.Unlock()
+		mutexconnectedpeers.Unlock()
 		mutexdiscoveredpeers.Unlock()
-		time.Sleep(time.Second * 5)
+
+		if num > 0 {
+			for {
+				<-done
+				num--
+				if num == 0 {
+					break
+				}
+			}
+		}
 	}
 }
 
-func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, done chan bool) {
 
+	defer doneconnect(done)
 	defer notconnecting(peer.Name)
 
 	var tlsconfig tls.Config
@@ -158,6 +186,10 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 	go serveRequests(connectedpeers[peer.Name])
 
 	return
+}
+
+func doneconnect(done chan bool) {
+	done <- true
 }
 
 func notconnecting(name string) {
