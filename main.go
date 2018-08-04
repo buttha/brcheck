@@ -34,6 +34,7 @@ var config Config
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
 var activetests uint64
 var exportingdb bool
+var resetconn uint64 // counter for resetconn
 
 func main() {
 	//defer profile.Start(profile.MemProfile).Stop() // memory
@@ -98,6 +99,7 @@ func main() {
 
 	stats() // manage statistics
 
+	resetconn = uint64(config.Conn.Resetconn)                      // restart all connections after resetconn requests
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
 	go Keepconnections(wordschan, nottestedchan, resultschan)      // peers discovery
 
@@ -197,6 +199,14 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			}
 			atomic.AddUint64(&stattotaltests, 1) // stats
 			atomic.AddUint64(&statminutetests, 1)
+
+			// resetconn
+			atomic.AddUint64(&resetconn, ^uint64(0))
+			if atomic.LoadUint64(&resetconn) == 0 {
+				atomic.StoreUint64(&resetconn, uint64(config.Conn.Resetconn))
+				Resetconnections()
+				go Establishconnections(wordschan, nottestedchan, resultschan)
+			}
 		default:
 		}
 	}

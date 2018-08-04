@@ -40,6 +40,7 @@ type connectedpeer struct {
 	wordschan     chan BrainAddress
 	nottestedchan chan BrainAddress
 	resultschan   chan BrainResult
+	closeconn     chan bool // to force disconnection
 }
 
 var connectedpeers = make(map[string]connectedpeer)  // current connections
@@ -75,6 +76,7 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 
 // Keepconnections : reach and mantain max connection's number via peer discovery algo
 func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+	time.Sleep(time.Second * 5) // wait Establishconnections
 	done := make(chan bool)
 	for {
 		mutexdiscoveredpeers.Lock()
@@ -105,6 +107,18 @@ func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan cha
 					break
 				}
 			}
+		}
+	}
+}
+
+// Resetconnections : reset all connections
+func Resetconnections() {
+	if config.Log.Lognet {
+		log.Println("resetting all connections")
+	}
+	for _, peer := range connectedpeers {
+		if peer.connection != nil {
+			peer.closeconn <- true
 		}
 	}
 }
@@ -155,12 +169,15 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 
 	mutexconnectedpeers.Lock()
 
+	close := make(chan bool, 1) // buffered, so I don't have to wait connection shutdown
+
 	connectedpeers[peer.Name] = connectedpeer{
 		peer:          peer,
 		connection:    client,
 		wordschan:     wordschan,
 		nottestedchan: nottestedchan,
 		resultschan:   resultschan,
+		closeconn:     close,
 	}
 
 	mutexconnectedpeers.Unlock()
@@ -203,11 +220,20 @@ func serveRequests(peer connectedpeer) {
 
 	// defer are executed LIFO
 	defer deletepeer(peer)
-	defer peer.connection.Close()
-
-	numrequests := 0
+	defer disconnect(peer)
 
 	for {
+
+		// check if disconnetion is required
+		select {
+		case <-peer.closeconn:
+			if config.Log.Lognet {
+				log.Printf("disconnected from: %s (# peers: %d): forced connection shutdown", peer.peer.Name, len(connectedpeers)-1)
+			}
+			return
+		default:
+		}
+
 		req = <-peer.wordschan
 
 		//balance, err := peer.connection.ScripthashBalance(req.Scripthash)
@@ -304,16 +330,6 @@ func serveRequests(peer connectedpeer) {
 			NumTxCompressed:       numtxC,
 		}
 
-		numrequests++
-
-		// reset connection if maximum request's number is reached
-		if numrequests > config.Conn.Resetconn {
-			if config.Log.Lognet {
-				log.Printf("Disconnected from: %s (# peers: %d): reached %d requests", peer.peer.Name, len(connectedpeers)-1, config.Conn.Resetconn)
-			}
-			return
-		}
-
 	}
 
 }
@@ -329,4 +345,10 @@ func deletepeer(peer connectedpeer) {
 	mutexconnectedpeers.Lock()
 	delete(connectedpeers, peer.peer.Name)
 	mutexconnectedpeers.Unlock()
+}
+
+func disconnect(peer connectedpeer) {
+	if peer.connection != nil {
+		peer.connection.Close()
+	}
 }

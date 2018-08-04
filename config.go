@@ -39,7 +39,7 @@ func ParseConfig() (Config, error) {
 	paramLognet := flag.Bool("lognet", true, "log network activity")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
-	paramResetconn := flag.Int("resetconn", 100, "reset connection with an electrum peer after N requests")
+	paramResetconn := flag.Int("resetconn", 4000, "reset all connections after resetconn requests")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
