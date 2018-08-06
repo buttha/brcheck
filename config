@@ -1,7 +1,7 @@
 # sample brcheck config file
 
 [log]
-lognet = true # log network's activity (default: false)
+lognet = false # log network's activity (default: false)
 nostats = false # disable statistics' log (default: true)
 logresult = false # log positive results
 
@@ -14,4 +14,4 @@ resetsingleconn= 100 # reset a connection affer resetsingleconn requests
 dbdir = "./database" # db directory
 exportdbfile = "./brcheck.db" # export database filename (sqlite3) 
 exportdbtable = "brains" # export db tablename
-exportdbinterval =  0 # export every exportinterval seconds (set to 0 to disable cron). db will be always exported when program stops
+exportdbinterval =  60 # export every exportinterval seconds (set to 0 to disable cron). db will be always exported when program stops

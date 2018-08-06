@@ -120,6 +120,7 @@ func main() {
 	// check if thereis something to read from stdin
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		lines := 0
 		log.Println("Start reading stdin")
 		for scanner.Scan() {
 			err = db.Put([]byte("totest|"+scanner.Text()), []byte("1"), nil)
@@ -127,17 +128,17 @@ func main() {
 				fmt.Println("error writing stdin to db:", err.Error())
 				return
 			}
+			lines++
+			if lines == 100000 { // "unlock" db and let other goroutines work
+				time.Sleep(time.Second)
+				lines = 0
+			}
 		}
 		log.Println("Finished reading stdin")
 	}
 	finishedstdin <- true // tell to goqueue we have finished reading stdin
 	<-finishedtesting     // wait the end of tests
 
-	/*
-		fmt.Println()
-		fmt.Println(atomic.LoadUint64(&activetests))
-		dumpdb(db)
-	*/
 }
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
