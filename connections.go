@@ -136,7 +136,9 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		Protocol:  "1.2",
 		KeepAlive: true,
 		TLS:       &tlsconfig,
+		Timeout:   5, // seconds
 		// Reconnect: false,
+
 	})
 
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,7 @@ type BrainResult struct {
 var config Config
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
 var activetests uint64
+var mutexactivetests = &sync.Mutex{}
 var exportingdb bool
 var resetconn uint64 // counter for resetconn
 
@@ -106,9 +108,11 @@ func main() {
 	finishedqueue := make(chan bool)   // finished reading queue
 	finishedtesting := make(chan bool) // finished testing passphrases
 	finishedstdin := make(chan bool)   // finished reading stdin
+	finishedbrains := make(chan bool)  // finished converting brains
 
+	go gobrains(finishedstdin, finishedbrains, db)                                          // convert queue rows into brainwallets
+	go goqueue(wordschan, finishedqueue, finishedstdin, finishedbrains, db)                 // submit brainwallets to electrum servers
 	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue, db) // manage electrum's results
-	go goqueue(wordschan, finishedqueue, finishedstdin, db)                                 // manage queue
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
@@ -128,6 +132,12 @@ func main() {
 	}
 	finishedstdin <- true // tell to goqueue we have finished reading stdin
 	<-finishedtesting     // wait the end of tests
+
+	/*
+		fmt.Println()
+		fmt.Println(atomic.LoadUint64(&activetests))
+		dumpdb(db)
+	*/
 }
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
@@ -162,26 +172,127 @@ func stats() {
 	}
 }
 
+// gobrains: convert queue rows into brainwallets
+func gobrains(finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
+	var address BrainAddress
+	var pass string
+	var numrows uint64
+	var lastloop bool // to do another loop when stdin is finished, to be sure everything is checked
+	for {
+		numrows = 0
+		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
+		for iter.Next() {
+			numrows++
+			key := iter.Key()
+			pass = strings.TrimLeft(string(key), "totest|")
+			address = BrainGenerator(pass)
+			atomic.AddUint64(&statbrainsgenerated, 1)
+			addressB, err := json.Marshal(address)
+			if err != nil {
+				log.Println("error encoding a brainwallet to test")
+				continue
+			}
+			err = db.Put([]byte("converted|"+pass), addressB, nil)
+			if err != nil {
+				log.Println("error setting totest -> testing a queue item: ", err.Error())
+				continue
+			}
+			err = db.Delete(key, nil)
+			if err != nil {
+				log.Println("error removing a testing queue row: ", err.Error())
+				continue
+			}
+			if numrows == 1000 {
+				break // otherwise goqueue doesn't have data until loop ends
+			}
+		}
+		iter.Release()
+		if numrows == 0 {
+			if lastloop {
+				finishedbrains <- true
+				return
+			} else {
+				select {
+				case <-finishedstdin:
+					lastloop = true
+				default:
+				}
+			}
+		}
+	}
+}
+
+// goqueue submit brainwallets to electrum servers
+func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
+	var address BrainAddress
+	var numrows uint64
+	var lastloop bool // to do another loop when brains are finished, to be sure everything is checked
+	for {
+		numrows = 0
+		iter := db.NewIterator(util.BytesPrefix([]byte("converted|")), nil)
+		for iter.Next() {
+			numrows++
+			err := json.Unmarshal(iter.Value(), &address)
+			if err != nil {
+				log.Println("error decoding a brainwallet to test")
+				continue
+			}
+			err = db.Put([]byte("testing|"+address.Passphrase), iter.Value(), nil)
+			if err != nil {
+				log.Println("error setting converted -> testing a queue item: ", err.Error())
+				continue
+			}
+			err = db.Delete(iter.Key(), nil)
+			if err != nil {
+				log.Println("error removing a converted queue row: ", err.Error())
+				continue
+			}
+			mutexactivetests.Lock()
+			atomic.AddUint64(&activetests, 1) // activetests++
+			mutexactivetests.Unlock()
+			wordschan <- address
+			if numrows==1000 {
+				break; // release db and memory
+			}
+		}
+		iter.Release()
+		if numrows == 0 {
+			if lastloop {
+				finishedqueue <- true
+				return
+			} else {
+				select {
+				case <-finishedbrains:
+					lastloop = true
+				default:
+				}
+			}
+		}
+	}
+}
+
 // goresults: manage electrum's results
 func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue chan bool, db *leveldb.DB) {
 	var nottested BrainAddress
 	var result BrainResult
 	for {
 
+		mutexactivetests.Lock()
 		if atomic.LoadUint64(&activetests) == 0 {
 			select {
 			case <-finishedqueue:
+				mutexactivetests.Unlock()
 				finishedtesting <- true
-				time.Sleep(100 * time.Millisecond)
+				return
 			default:
 			}
 		}
+		mutexactivetests.Unlock()
 
 		select {
 		case nottested = <-nottestedchan:
 			wordschan <- nottested // resubmit to another server
 		case result = <-resultschan: // here it's the result
-			atomic.AddUint64(&activetests, ^uint64(0)) // activetests--
 			if result.NumTx+result.NumTxCompressed != 0 {
 				if config.Log.Logresult {
 					log.Printf("%+v\n", result)
@@ -197,6 +308,10 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			if err != nil {
 				log.Println("error removing a queue item from testing status: " + err.Error())
 			}
+			mutexactivetests.Lock()
+			atomic.AddUint64(&activetests, ^uint64(0)) // activetests--
+			mutexactivetests.Unlock()
+
 			atomic.AddUint64(&stattotaltests, 1) // stats
 			atomic.AddUint64(&statminutetests, 1)
 
@@ -212,53 +327,10 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 	}
 }
 
-// goqueue: manage queue
-func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin chan bool, db *leveldb.DB) {
-	var address BrainAddress
-	var pass string
-	var numrows uint64
-	for {
-		numrows = 0
-		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
-		for iter.Next() {
-			numrows++
-			key := iter.Key()
-			iter.Release()
-			pass = strings.TrimLeft(string(key), "totest|")
-			address = BrainGenerator(pass)
-			atomic.AddUint64(&statbrainsgenerated, 1)
-			wordschan <- address
-			atomic.AddUint64(&activetests, 1) // activetests++
-
-			err := db.Put([]byte("testing|"+pass), []byte("1"), nil)
-			if err != nil {
-				log.Println("error setting totest -> testing a queue item: ", err.Error())
-				continue
-			}
-			err = db.Delete(key, nil)
-			if err != nil {
-				log.Println("error removing a testing queue row: ", err.Error())
-				continue
-			}
-		}
-
-		if numrows == 0 {
-			select {
-			case <-finishedstdin:
-				iter.Release()
-				finishedqueue <- true
-				time.Sleep(100 * time.Millisecond)
-			default:
-			}
-		}
-	}
-}
-
 func dumpdb(db *leveldb.DB) {
-	iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
+	//iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
+	iter := db.NewIterator(nil, nil)
 	for iter.Next() {
-		// Remember that the contents of the returned slice should not be modified, and
-		// only valid until the next call to Next.
 		key := iter.Key()
 		value := iter.Value()
 		fmt.Println(string(key), string(value))

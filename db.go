@@ -1,11 +1,12 @@
 /*
 db entries are ( key = value ):
 
-totest|word = 1 : word in the queue waiting to be tested
-testing|word = 1 : word under electrum's test (totest|word is removed from db)
-result|word = {json} : a positive result is stored as json (testing|word is removed from db)
+totest|word = 1 : word in the queue waiting to be converted
+converted|word = {json brainwallet} : item converted and waiting to be tested (totest|word is removed from db)
+testing|word = {json brainwallet} : word converted and under electrum's test  (converted|word is removed from db)
+result|word = {json result} : a positive result is stored as json (testing|word is removed from db)
 
-when program starts and stops, testing|word are resetted into totest|word status, since we don't have a result yet
+when program starts and stops, testing|word are resetted into converted|word status, since we don't have a result yet
 */
 
 package main
@@ -119,14 +120,14 @@ func closeDb(db *leveldb.DB) {
 }
 
 func fixQueue(db *leveldb.DB) {
-	// reset queue rows from testing -> totest status
+	// reset queue rows from testing -> converted status
 	iter := db.NewIterator(util.BytesPrefix([]byte("testing|")), nil)
 	for iter.Next() {
 		key := iter.Key()
 		pass := strings.TrimLeft(string(key), "testing|")
-		err := db.Put([]byte("totest|"+pass), []byte("1"), nil)
+		err := db.Put([]byte("converted|"+pass), iter.Value(), nil)
 		if err != nil {
-			log.Println("error setting testing -> totest a queue item: ", err.Error())
+			log.Println("error setting testing -> converted a queue item: ", err.Error())
 			continue
 		}
 		err = db.Delete(iter.Key(), nil)
