@@ -13,7 +13,8 @@ type configLog struct {
 }
 
 type configConn struct {
-	Resetconn int
+	Resetconn       int
+	Resetsingleconn int
 }
 
 type configDb struct {
@@ -39,7 +40,8 @@ func ParseConfig() (Config, error) {
 	paramLognet := flag.Bool("lognet", true, "log network activity")
 	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
-	paramResetconn := flag.Int("resetconn", 8000, "reset all connections after resetconn requests")
+	paramResetconn := flag.Int("resetconn", 0, "reset all connections after resetconn requests (leave 0 to disable it)")
+	paramResetsingleconn := flag.Int("resetsingleconn", 100, "reset a connection affer resetsingleconn requests")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
@@ -51,6 +53,7 @@ func ParseConfig() (Config, error) {
 	configuration.Log.Nostats = *paramNostats
 	configuration.Log.Logresult = *paramLogresult
 	configuration.Conn.Resetconn = *paramResetconn
+	configuration.Conn.Resetsingleconn = *paramResetsingleconn
 	configuration.Db.Dbdir = *paramDbdir
 	configuration.Db.Exportdbfile = *paramExportdbfile
 	configuration.Db.Exportdbtable = *paramExportdbtable
@@ -73,6 +76,8 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Logresult = *paramLogresult
 		case "resetconn":
 			configuration.Conn.Resetconn = *paramResetconn
+		case "resetsingleconn":
+			configuration.Conn.Resetsingleconn = *paramResetsingleconn
 		case "dbdir":
 			configuration.Db.Dbdir = *paramDbdir
 		case "exportdbfile":

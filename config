@@ -6,7 +6,8 @@ nostats = false # disable statistics' log (default: true)
 logresult = false # log positive results
 
 [conn]
-resetconn = 8000 # reset all connections after resetconn requests
+resetconn = 0 # reset all connections after resetconn requests (leave 0 to disable it)
+resetsingleconn= 100 # reset a connection affer resetsingleconn requests
 # ^^^^^ this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT
 
 [db]

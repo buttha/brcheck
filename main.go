@@ -251,8 +251,8 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 			atomic.AddUint64(&activetests, 1) // activetests++
 			mutexactivetests.Unlock()
 			wordschan <- address
-			if numrows==1000 {
-				break; // release db and memory
+			if numrows == 1000 {
+				break // release db and memory
 			}
 		}
 		iter.Release()
@@ -316,11 +316,13 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			atomic.AddUint64(&statminutetests, 1)
 
 			// resetconn
-			atomic.AddUint64(&resetconn, ^uint64(0))
-			if atomic.LoadUint64(&resetconn) == 0 {
-				atomic.StoreUint64(&resetconn, uint64(config.Conn.Resetconn))
-				Resetconnections()
-				go Establishconnections(wordschan, nottestedchan, resultschan)
+			if config.Conn.Resetconn > 0 {
+				atomic.AddUint64(&resetconn, ^uint64(0))
+				if atomic.LoadUint64(&resetconn) == 0 {
+					atomic.StoreUint64(&resetconn, uint64(config.Conn.Resetconn))
+					Resetconnections()
+					go Establishconnections(wordschan, nottestedchan, resultschan)
+				}
 			}
 		default:
 		}

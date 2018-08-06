@@ -49,7 +49,7 @@ var connectingpeers = make(map[string]bool)          // peers under connection
 
 // Establishconnections manages electrum's peers connection / comunication / channels
 func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	done := make(chan bool)
+	//done := make(chan bool)
 	num := 0
 	// connect on startup peers (SSL only)
 	for _, peer := range bootpeers {
@@ -58,47 +58,12 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 			if strings.HasPrefix(feature, "s") && !connectingpeers[peer.Name] { // server supports SSL
 				connectingpeers[peer.Name] = true
 				num++
-				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan, done)
+				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan /*, done */)
 			}
 			mutexconnectingpeers.Unlock()
 		}
 	}
-	if num > 0 {
-		for {
-			<-done
-			num--
-			if num == 0 {
-				break
-			}
-		}
-	}
-}
-
-// Keepconnections : reach and mantain max connection's number via peer discovery algo
-func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	time.Sleep(time.Second * 5) // wait Establishconnections
-	done := make(chan bool)
-	for {
-		mutexdiscoveredpeers.Lock()
-		mutexconnectedpeers.Lock()
-		mutexconnectingpeers.Lock()
-		num := 0
-		for _, disco := range discoveredpeers { // search for a peer...
-			if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
-				for _, feat := range disco.Features { // ... which supports...
-					if strings.HasPrefix(feat, "s") { // ... SSL
-						connectingpeers[disco.Name] = true
-						num++
-						go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan, done)
-					}
-
-				}
-			}
-		}
-		mutexconnectingpeers.Unlock()
-		mutexconnectedpeers.Unlock()
-		mutexdiscoveredpeers.Unlock()
-
+	/*
 		if num > 0 {
 			for {
 				<-done
@@ -108,6 +73,47 @@ func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan cha
 				}
 			}
 		}
+	*/
+}
+
+// Keepconnections : reach and mantain max connection's number via peer discovery algo
+func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+	var num int64
+	time.Sleep(time.Second * 5) // wait Establishconnections
+	//done := make(chan bool)
+	for {
+		mutexdiscoveredpeers.Lock()
+		mutexconnectedpeers.Lock()
+		mutexconnectingpeers.Lock()
+		num = 0
+		for _, disco := range discoveredpeers { // search for a peer...
+			if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
+				for _, feat := range disco.Features { // ... which supports...
+					if strings.HasPrefix(feat, "s") { // ... SSL
+						connectingpeers[disco.Name] = true
+						num++
+						go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan /*, done */)
+					}
+
+				}
+			}
+		}
+		mutexconnectingpeers.Unlock()
+		mutexconnectedpeers.Unlock()
+		mutexdiscoveredpeers.Unlock()
+
+		time.Sleep(time.Second)
+		/*
+			if num > 0 {
+				for {
+					<-done
+					num--
+					if num == 0 {
+						break
+					}
+				}
+			}
+		*/
 	}
 }
 
@@ -123,9 +129,9 @@ func Resetconnections() {
 	}
 }
 
-func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, done chan bool) {
+func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult /*, done chan bool*/) {
 
-	defer doneconnect(done)
+	//defer doneconnect(done)
 	defer notconnecting(peer.Name)
 
 	var tlsconfig tls.Config
@@ -207,10 +213,11 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 	return
 }
 
+/*
 func doneconnect(done chan bool) {
 	done <- true
 }
-
+*/
 func notconnecting(name string) {
 	mutexconnectingpeers.Lock()
 	delete(connectingpeers, name)
@@ -223,6 +230,8 @@ func serveRequests(peer connectedpeer) {
 	// defer are executed LIFO
 	defer deletepeer(peer)
 	defer disconnect(peer)
+
+	numrequests := 0
 
 	for {
 
@@ -330,6 +339,15 @@ func serveRequests(peer connectedpeer) {
 			UnconfirmedCompressed: balanceC.Unconfirmed,
 			LastTxTimeCompressed:  ltimeC,
 			NumTxCompressed:       numtxC,
+		}
+
+		numrequests++
+		// reset connection if maximum request's number is reached
+		if numrequests >= config.Conn.Resetsingleconn {
+			if config.Log.Lognet {
+				log.Printf("Disconnected from: %s (# peers: %d): reached %d requests", peer.peer.Name, len(connectedpeers)-1, config.Conn.Resetsingleconn)
+			}
+			return
 		}
 
 	}
