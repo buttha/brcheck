@@ -39,7 +39,7 @@ var exportingdb bool
 var resetconn uint64 // counter for resetconn
 
 func main() {
-	//defer profile.Start(profile.MemProfile).Stop() // memory
+	// defer profile.Start(profile.MemProfile).Stop() // memory
 	//defer profile.Start().Stop() // cpu
 	/*
 		import "github.com/pkg/profile"
@@ -140,6 +140,12 @@ func main() {
 	}
 	finishedstdin <- true // tell to goqueue we have finished reading stdin
 	<-finishedtesting     // wait the end of tests
+
+	if exportingdb {
+		doexportdb(db, exportdb)
+		closeExportDb(exportdb)
+	}
+	closeDb(db)
 
 }
 
