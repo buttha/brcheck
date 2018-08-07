@@ -49,71 +49,49 @@ var connectingpeers = make(map[string]bool)          // peers under connection
 
 // Establishconnections manages electrum's peers connection / comunication / channels
 func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	//done := make(chan bool)
-	num := 0
 	// connect on startup peers (SSL only)
 	for _, peer := range bootpeers {
 		for _, feature := range peer.Features {
 			mutexconnectingpeers.Lock()
 			if strings.HasPrefix(feature, "s") && !connectingpeers[peer.Name] { // server supports SSL
 				connectingpeers[peer.Name] = true
-				num++
-				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan /*, done */)
+				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan)
 			}
 			mutexconnectingpeers.Unlock()
 		}
 	}
-	/*
-		if num > 0 {
-			for {
-				<-done
-				num--
-				if num == 0 {
-					break
-				}
-			}
-		}
-	*/
 }
 
 // Keepconnections : reach and mantain max connection's number via peer discovery algo
 func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	var num int64
+	var connected, lastconnected int
+
 	time.Sleep(time.Second * 5) // wait Establishconnections
-	//done := make(chan bool)
 	for {
 		mutexdiscoveredpeers.Lock()
 		mutexconnectedpeers.Lock()
 		mutexconnectingpeers.Lock()
-		num = 0
-		for _, disco := range discoveredpeers { // search for a peer...
-			if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
-				for _, feat := range disco.Features { // ... which supports...
-					if strings.HasPrefix(feat, "s") { // ... SSL
-						connectingpeers[disco.Name] = true
-						num++
-						go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan /*, done */)
-					}
 
+		connected = len(connectedpeers)
+		if connected != lastconnected { // try only if connections' number is changed
+			for _, disco := range discoveredpeers { // search for a peer...
+				if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
+					for _, feat := range disco.Features { // ... which supports...
+						if strings.HasPrefix(feat, "s") { // ... SSL
+							connectingpeers[disco.Name] = true
+							go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan)
+						}
+
+					}
 				}
 			}
 		}
+		lastconnected = connected
 		mutexconnectingpeers.Unlock()
 		mutexconnectedpeers.Unlock()
 		mutexdiscoveredpeers.Unlock()
 
 		time.Sleep(time.Second)
-		/*
-			if num > 0 {
-				for {
-					<-done
-					num--
-					if num == 0 {
-						break
-					}
-				}
-			}
-		*/
 	}
 }
 
@@ -129,9 +107,8 @@ func Resetconnections() {
 	}
 }
 
-func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult /*, done chan bool*/) {
+func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
 
-	//defer doneconnect(done)
 	defer notconnecting(peer.Name)
 
 	var tlsconfig tls.Config
@@ -148,29 +125,44 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 	})
 
 	if err != nil {
+		mutexdiscoveredpeers.Lock()
+		delete(discoveredpeers, peer.Name)
+		mutexdiscoveredpeers.Unlock()
 		return
 	}
 
 	_, err = client.ServerVersion()
 	if err != nil {
+		mutexdiscoveredpeers.Lock()
+		delete(discoveredpeers, peer.Name)
+		mutexdiscoveredpeers.Unlock()
 		client.Close()
 		return
 	}
 
 	feat, err := client.ServerFeatures()
 	if err != nil {
+		mutexdiscoveredpeers.Lock()
+		delete(discoveredpeers, peer.Name)
+		mutexdiscoveredpeers.Unlock()
 		client.Close()
 		return
 	}
 
 	protoversion, _ := strconv.ParseFloat(feat.ProtocolMax, 2)
 	if protoversion < 1.2 { // no verbose mode for blockchain.transaction.get
+		mutexdiscoveredpeers.Lock()
+		delete(discoveredpeers, peer.Name)
+		mutexdiscoveredpeers.Unlock()
 		client.Close()
 		return
 	}
 
 	peers, err := client.ServerPeers()
 	if err != nil {
+		mutexdiscoveredpeers.Lock()
+		delete(discoveredpeers, peer.Name)
+		mutexdiscoveredpeers.Unlock()
 		client.Close()
 		return
 	}
@@ -213,11 +205,6 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 	return
 }
 
-/*
-func doneconnect(done chan bool) {
-	done <- true
-}
-*/
 func notconnecting(name string) {
 	mutexconnectingpeers.Lock()
 	delete(connectingpeers, name)

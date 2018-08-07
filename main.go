@@ -42,6 +42,8 @@ func main() {
 	//defer profile.Start(profile.MemProfile).Stop() // memory
 	//defer profile.Start().Stop() // cpu
 	/*
+		import "github.com/pkg/profile"
+
 		go tool pprof --pdf ~/go/bin/yourbinary /var/path/to/file.pprof > file.pdf
 		go tool pprof --text ~/go/bin/yourbinary /var/path/to/file.pprof > file.txt
 		see https://flaviocopes.com/golang-profiling/
