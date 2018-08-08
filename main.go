@@ -99,7 +99,11 @@ func main() {
 		return
 	*/
 
-	manageshutdown(db, exportdb) // detect program interruption
+	shutdowngobrains := make(chan bool)  // used to stop gobrains (by manageshutdown)
+	shutdowngoqueue := make(chan bool)   // used to stop goqueue (by manageshutdown)
+	shutdowngoresults := make(chan bool) // used to stop goresults (by manageshutdown)
+
+	manageshutdown(db, exportdb, shutdowngobrains, shutdowngoqueue, shutdowngoresults) // detect program interruption
 
 	stats() // manage statistics
 
@@ -112,9 +116,9 @@ func main() {
 	finishedstdin := make(chan bool)   // finished reading stdin
 	finishedbrains := make(chan bool)  // finished converting brains
 
-	go gobrains(finishedstdin, finishedbrains, db)                                          // convert queue rows into brainwallets
-	go goqueue(wordschan, finishedqueue, finishedstdin, finishedbrains, db)                 // submit brainwallets to electrum servers
-	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue, db) // manage electrum's results
+	go gobrains(finishedstdin, finishedbrains, shutdowngobrains, db)                                           // convert queue rows into brainwallets
+	go goqueue(wordschan, finishedqueue, finishedstdin, finishedbrains, shutdowngoqueue, db)                   // submit brainwallets to electrum servers
+	go goresults(wordschan, nottestedchan, resultschan, finishedtesting, finishedqueue, shutdowngoresults, db) // manage electrum's results
 
 	// main cicle
 	scanner := bufio.NewScanner(os.Stdin) // read from standard input
@@ -143,17 +147,18 @@ func main() {
 
 }
 
-func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
+func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults chan bool) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
-		if exportingdb {
-			doexportdb(db, exportdb)
-			closeExportDb(exportdb)
-		}
-		closeDb(db)
+		log.Println("... stopping brainwallet's generations...")
+		shutdowngobrains <- true
+		log.Println("... stopping queue manager...")
+		shutdowngoqueue <- true
+		log.Println("... stopping results manager...")
+		shutdowngoresults <- true
 		log.Println("...done")
 		os.Exit(0)
 	}()
@@ -176,7 +181,7 @@ func stats() {
 }
 
 // gobrains: convert queue rows into brainwallets
-func gobrains(finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
+func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *leveldb.DB) {
 	var address BrainAddress
 	var pass string
 	var numrows uint64
@@ -210,10 +215,16 @@ func gobrains(finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
 			}
 		}
 		iter.Release()
+
 		if numrows == 0 {
 			if lastloop {
-				finishedbrains <- true
-				return
+				select {
+				case finishedbrains <- true:
+					<-shutdowngobrains // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
+					return
+				case <-shutdowngobrains:
+					return
+				}
 			} else {
 				select {
 				case <-finishedstdin:
@@ -222,11 +233,18 @@ func gobrains(finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
 				}
 			}
 		}
+
+		select {
+		case <-shutdowngobrains:
+			return
+		default:
+		}
+
 	}
 }
 
 // goqueue submit brainwallets to electrum servers
-func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finishedbrains chan bool, db *leveldb.DB) {
+func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finishedbrains, shutdowngoqueue chan bool, db *leveldb.DB) {
 	var address BrainAddress
 	var numrows uint64
 	var lastloop bool // to do another loop when brains are finished, to be sure everything is checked
@@ -259,10 +277,16 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 			}
 		}
 		iter.Release()
+
 		if numrows == 0 {
 			if lastloop {
-				finishedqueue <- true
-				return
+				select {
+				case finishedqueue <- true:
+					<-shutdowngoqueue // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
+					return
+				case <-shutdowngoqueue:
+					return
+				}
 			} else {
 				select {
 				case <-finishedbrains:
@@ -271,11 +295,17 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 				}
 			}
 		}
+
+		select {
+		case <-shutdowngoqueue:
+			return
+		default:
+		}
 	}
 }
 
 // goresults: manage electrum's results
-func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue chan bool, db *leveldb.DB) {
+func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult, finishedtesting, finishedqueue, shutdowngoresults chan bool, db *leveldb.DB) {
 	var nottested BrainAddress
 	var result BrainResult
 	for {
@@ -285,12 +315,23 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			select {
 			case <-finishedqueue:
 				mutexactivetests.Unlock()
-				finishedtesting <- true
-				return
+				select {
+				case finishedtesting <- true:
+					<-shutdowngoresults // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
+					return
+				case <-shutdowngoresults:
+					return
+				}
 			default:
 			}
 		}
 		mutexactivetests.Unlock()
+
+		select {
+		case <-shutdowngoresults:
+			return
+		default:
+		}
 
 		select {
 		case nottested = <-nottestedchan:
