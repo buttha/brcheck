@@ -141,12 +141,6 @@ func main() {
 	finishedstdin <- true // tell to goqueue we have finished reading stdin
 	<-finishedtesting     // wait the end of tests
 
-	if exportingdb {
-		doexportdb(db, exportdb)
-		closeExportDb(exportdb)
-	}
-	closeDb(db)
-
 }
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB) { // detect program interrupt
