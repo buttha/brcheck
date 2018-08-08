@@ -11,10 +11,6 @@ import (
 	"github.com/buttha/electrum"
 )
 
-var tlsconfig = &tls.Config{
-	InsecureSkipVerify: true,
-}
-
 var mutexconnectedpeers = &sync.Mutex{}
 var mutexdiscoveredpeers = &sync.Mutex{}
 var mutexconnectingpeers = &sync.Mutex{} // avoid double connecting attempt
@@ -119,7 +115,7 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 		Address:   peer.Name + ":" + port,
 		Protocol:  "1.2",
 		KeepAlive: true,
-		TLS:       tlsconfig,
+		TLS:       &tls.Config{InsecureSkipVerify: true},
 		Timeout:   5, // seconds
 		Reconnect: false,
 	})
