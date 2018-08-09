@@ -229,6 +229,13 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 		numrows = 0
 		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
 		for iter.Next() {
+
+			select {
+			case <-shutdowngobrains:
+				return
+			default:
+			}
+
 			numrows++
 			key := iter.Key()
 			pass = strings.TrimLeft(string(key), "totest|")
@@ -291,6 +298,13 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 		numrows = 0
 		iter := db.NewIterator(util.BytesPrefix([]byte("converted|")), nil)
 		for iter.Next() {
+
+			select {
+			case <-shutdowngoqueue:
+				return
+			default:
+			}
+
 			numrows++
 			err := json.Unmarshal(iter.Value(), &address)
 			if err != nil {
@@ -340,6 +354,7 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 			return
 		default:
 		}
+
 	}
 }
 
