@@ -40,7 +40,7 @@ var resetconn uint64 // counter for resetconn
 
 func main() {
 	// defer profile.Start(profile.MemProfile).Stop() // memory
-	//defer profile.Start().Stop() // cpu
+	// defer profile.Start().Stop() // cpu
 	/*
 		import "github.com/pkg/profile"
 
@@ -315,23 +315,13 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			select {
 			case <-finishedqueue:
 				mutexactivetests.Unlock()
-				select {
-				case finishedtesting <- true:
-					<-shutdowngoresults // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
-					return
-				case <-shutdowngoresults:
-					return
-				}
+				finishedtesting <- true
+				<-shutdowngoresults // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
+				return
 			default:
 			}
 		}
 		mutexactivetests.Unlock()
-
-		select {
-		case <-shutdowngoresults:
-			return
-		default:
-		}
 
 		select {
 		case nottested = <-nottestedchan:
@@ -368,7 +358,8 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 					go Establishconnections(wordschan, nottestedchan, resultschan)
 				}
 			}
-		default:
+		case <-shutdowngoresults:
+			return
 		}
 	}
 }
