@@ -105,7 +105,7 @@ func main() {
 
 	manageshutdown(db, exportdb, shutdowngobrains, shutdowngoqueue, shutdowngoresults) // detect program interruption
 
-	stats() // manage statistics
+	stats(db) // manage statistics
 
 	resetconn = uint64(config.Conn.Resetconn)                      // restart all connections after resetconn requests
 	go Establishconnections(wordschan, nottestedchan, resultschan) // establish electrum's connections
@@ -164,15 +164,54 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 	}()
 }
 
-func stats() {
+func stats(db *leveldb.DB) {
 	if config.Log.Nostats == false {
+
+		num := 0              // used to compute session's average tests per second,
+		var avgavgsec float64 // in order to have a good timetocomplete estimation
+
 		statsChan := time.NewTicker(time.Second * 60).C
 		go func() {
 			for {
 				<-statsChan
-				avgmin := float64(atomic.LoadUint64(&statminutetests)) / 60.0
+
+				num++
+
+				iter := db.NewIterator(nil, nil)
+				numtotest := 0
+				numconverted := 0
+				numtesting := 0
+				numresult := 0
+				for iter.Next() {
+					key := string(iter.Key())
+					if strings.HasPrefix(key, "totest|") {
+						numtotest++
+					}
+					if strings.HasPrefix(key, "converted|") {
+						numconverted++
+					}
+					if strings.HasPrefix(key, "testing|") {
+						numtesting++
+					}
+					if strings.HasPrefix(key, "result|") {
+						numresult++
+					}
+				}
+				iter.Release()
+
+				avgsec := float64(atomic.LoadUint64(&statminutetests)) / 60.0
 				brainsgeneratedpersec := float64(atomic.LoadUint64(&statbrainsgenerated)) / 60.0
-				log.Printf("[STATS] Total tests: %d | Last minute: %d | Last minute average: %.2f tests/s | Addresses found: %d | Brains generated: %d (%.2f/s)\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statminutetests), avgmin, atomic.LoadUint64(&statfound), atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec)
+
+				avgavgsec = (avgavgsec*float64(num-1) + avgsec) / float64(num)
+				timetocomplete := ""
+				if avgavgsec != 0 {
+					timetocomplete = secondsToHuman(int(float64(numtotest+numconverted) / avgavgsec))
+				} else {
+					timetocomplete = "NA"
+				}
+
+				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To test: %d | Converted: %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, numtotest, numconverted, numtesting, numresult, timetocomplete)
+
 				atomic.StoreUint64(&statminutetests, 0)
 				atomic.StoreUint64(&statbrainsgenerated, 0)
 			}
@@ -362,16 +401,4 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			return
 		}
 	}
-}
-
-func dumpdb(db *leveldb.DB) {
-	//iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
-	iter := db.NewIterator(nil, nil)
-	for iter.Next() {
-		key := iter.Key()
-		value := iter.Value()
-		fmt.Println(string(key), string(value))
-	}
-	iter.Release()
-	return
 }

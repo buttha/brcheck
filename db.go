@@ -14,6 +14,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -114,11 +115,6 @@ func doexportdb(db *leveldb.DB, exportdb *sql.DB) {
 	}
 }
 
-func closeDb(db *leveldb.DB) {
-	fixQueue(db)
-	db.Close()
-}
-
 func fixQueue(db *leveldb.DB) {
 	// reset queue rows from testing -> converted status
 	iter := db.NewIterator(util.BytesPrefix([]byte("testing|")), nil)
@@ -140,6 +136,23 @@ func fixQueue(db *leveldb.DB) {
 	if err != nil {
 		log.Println("error shutting down working db: ", err.Error())
 	}
+}
+
+func dumpdb(db *leveldb.DB) {
+	//iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		key := iter.Key()
+		value := iter.Value()
+		fmt.Println(string(key), string(value))
+	}
+	iter.Release()
+	return
+}
+
+func closeDb(db *leveldb.DB) {
+	fixQueue(db)
+	db.Close()
 }
 
 func closeExportDb(exportdb *sql.DB) {
