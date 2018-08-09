@@ -328,7 +328,7 @@ func serveRequests(peer connectedpeer) {
 		// reset connection if maximum request's number is reached
 		if numrequests >= config.Conn.Resetsingleconn {
 			if config.Log.Lognet {
-				log.Printf("Disconnected from: %s (# peers: %d): reached %d requests", peer.peer.Name, len(connectedpeers)-1, config.Conn.Resetsingleconn)
+				log.Printf("Disconnected from: %s: reached %d requests", peer.peer.Name, config.Conn.Resetsingleconn)
 			}
 			return
 		}

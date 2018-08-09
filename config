@@ -2,7 +2,7 @@
 
 [log]
 lognet = false # log network's activity (default: false)
-nostats = false # disable statistics' log (default: false)
+logstats = true # statistics' log (default: true)
 logresult = false # log positive results (default: true)
 
 [conn]

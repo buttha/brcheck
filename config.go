@@ -8,7 +8,7 @@ import (
 
 type configLog struct {
 	Lognet    bool
-	Nostats   bool
+	Logstats  bool
 	Logresult bool
 }
 
@@ -38,7 +38,7 @@ func ParseConfig() (Config, error) {
 
 	paramConfigFile := flag.String("config", "", "config file. Command line parameters has higher priority")
 	paramLognet := flag.Bool("lognet", true, "log network activity")
-	paramNostats := flag.Bool("nostats", false, "don't log activity stats")
+	paramLogstats := flag.Bool("logstats", true, "log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
 	paramResetconn := flag.Int("resetconn", 0, "reset all connections after resetconn requests (leave 0 to disable it)")
 	paramResetsingleconn := flag.Int("resetsingleconn", 100, "reset a connection affer resetsingleconn requests")
@@ -50,7 +50,7 @@ func ParseConfig() (Config, error) {
 
 	// set default values
 	configuration.Log.Lognet = *paramLognet
-	configuration.Log.Nostats = *paramNostats
+	configuration.Log.Logstats = *paramLogstats
 	configuration.Log.Logresult = *paramLogresult
 	configuration.Conn.Resetconn = *paramResetconn
 	configuration.Conn.Resetsingleconn = *paramResetsingleconn
@@ -70,8 +70,8 @@ func ParseConfig() (Config, error) {
 		switch a.Name {
 		case "lognet":
 			configuration.Log.Lognet = *paramLognet
-		case "nostats":
-			configuration.Log.Nostats = *paramNostats
+		case "logstats":
+			configuration.Log.Logstats = *paramLogstats
 		case "logresult":
 			configuration.Log.Logresult = *paramLogresult
 		case "resetconn":

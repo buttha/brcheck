@@ -177,7 +177,7 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 }
 
 func stats(db *leveldb.DB) {
-	if config.Log.Nostats == false {
+	if config.Log.Logstats {
 
 		num := 0              // used to compute session's average tests per second,
 		var avgavgsec float64 // in order to have a good timetocomplete estimation
