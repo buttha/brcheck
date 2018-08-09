@@ -153,12 +153,24 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
-		log.Println("... stopping brainwallet's generations...")
-		shutdowngobrains <- true
-		log.Println("... stopping queue manager...")
-		shutdowngoqueue <- true
-		log.Println("... stopping results manager...")
-		shutdowngoresults <- true
+		log.Println("...stopping brainwallet's generations...")
+		select {
+		case shutdowngobrains <- true:
+		case <-time.After(10 * time.Second):
+			log.Println("...time out: forced close...")
+		}
+		log.Println("...stopping queue manager...")
+		select {
+		case shutdowngoqueue <- true:
+		case <-time.After(10 * time.Second):
+			log.Println("...time out: forced close...")
+		}
+		log.Println("...stopping results manager...")
+		select {
+		case shutdowngoresults <- true:
+		case <-time.After(10 * time.Second):
+			log.Println("...time out: forced close...")
+		}
 		log.Println("...done")
 		os.Exit(0)
 	}()
@@ -210,7 +222,7 @@ func stats(db *leveldb.DB) {
 					timetocomplete = "NA"
 				}
 
-				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To test: %d | Converted: %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, numtotest, numconverted, numtesting, numresult, timetocomplete)
+				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, numtotest, numconverted, numtesting, numresult, timetocomplete)
 
 				atomic.StoreUint64(&statminutetests, 0)
 				atomic.StoreUint64(&statbrainsgenerated, 0)
