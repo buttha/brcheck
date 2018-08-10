@@ -273,8 +273,8 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 				break // otherwise goqueue doesn't have data until loop ends
 			}
 
-			if config.Core.Autobrainspeed {
-				for atomic.LoadUint64(&statbrainsgenerated) > atomic.LoadUint64(&statminutetests) {
+			if config.Core.Autobrainspeed { // computes 30% more brains than tests, to be sure there're always brainwallets to be tested
+				for float64(atomic.LoadUint64(&statbrainsgenerated)) > float64(atomic.LoadUint64(&statminutetests))*1.3 {
 					time.Sleep(10 * time.Millisecond)
 				}
 			}
