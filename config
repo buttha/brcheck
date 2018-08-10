@@ -6,6 +6,7 @@ logstats = true # statistics' log (default: true)
 logresult = false # log positive results (default: true)
 
 [conn]
+sslonly = true # connect only to SSL nodes (default: false)
 resetconn = 0 # reset all connections after resetconn requests (leave 0 to disable it)
 resetsingleconn= 100 # reset a connection affer resetsingleconn requests (default 100)
 # ^^^^^ this is circumvent BANDWIDTH_LIMIT see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT

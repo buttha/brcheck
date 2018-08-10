@@ -49,16 +49,38 @@ var connectingpeers = make(map[string]bool)          // peers under connection
 
 // Establishconnections manages electrum's peers connection / comunication / channels
 func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	// connect on startup peers (SSL only)
+	// connect on startup peers
+
 	for _, peer := range bootpeers {
-		for _, feature := range peer.Features {
-			mutexconnectingpeers.Lock()
-			if strings.HasPrefix(feature, "s") && !connectingpeers[peer.Name] { // server supports SSL
-				connectingpeers[peer.Name] = true
-				go connect(peer, strings.TrimPrefix(feature, "s"), wordschan, nottestedchan, resultschan)
-			}
+
+		mutexconnectingpeers.Lock()
+		if connectingpeers[peer.Name] { // there's already a connection attempt: skip this peer
 			mutexconnectingpeers.Unlock()
+			continue
 		}
+		mutexconnectingpeers.Unlock()
+
+		protoport := ""
+		for _, feature := range peer.Features {
+			if string(feature[0]) == "s" {
+				protoport = feature
+				break
+			}
+			if !config.Conn.Sslonly && string(feature[0]) == "t" {
+				protoport = feature
+			}
+		}
+
+		if protoport == "" { // config.Conn.Sslonly but peer has tcp only
+			continue
+		}
+
+		mutexconnectingpeers.Lock()
+		connectingpeers[peer.Name] = true
+		mutexconnectingpeers.Unlock()
+
+		go connect(peer, protoport, wordschan, nottestedchan, resultschan)
+
 	}
 }
 
@@ -75,15 +97,29 @@ func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan cha
 		connected = len(connectedpeers)
 		if connected != lastconnected { // try only if connections' number is changed
 			for _, disco := range discoveredpeers { // search for a peer...
-				if connectedpeers[disco.Name].connection == nil && !connectingpeers[disco.Name] { // .... not already connected...
-					for _, feat := range disco.Features { // ... which supports...
-						if strings.HasPrefix(feat, "s") { // ... SSL
-							connectingpeers[disco.Name] = true
-							go connect(disco, strings.TrimPrefix(feat, "s"), wordschan, nottestedchan, resultschan)
-						}
 
+				if connectedpeers[disco.Name].connection != nil || connectingpeers[disco.Name] { // already connected or there's already a connection attempt
+					continue
+				}
+
+				protoport := ""
+				for _, feat := range disco.Features {
+					if string(feat[0]) == "s" {
+						protoport = feat
+						break
+					}
+					if !config.Conn.Sslonly && string(feat[0]) == "t" {
+						protoport = feat
 					}
 				}
+
+				if protoport == "" { // config.Conn.Sslonly but peer has tcp only
+					continue
+				}
+
+				connectingpeers[disco.Name] = true
+				go connect(disco, protoport, wordschan, nottestedchan, resultschan)
+
 			}
 		}
 		lastconnected = connected
@@ -107,12 +143,12 @@ func Resetconnections() {
 	}
 }
 
-func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
+func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
 
 	defer notconnecting(peer.Name)
 
 	client, err := electrum.New(&electrum.Options{
-		Address:   peer.Name + ":" + port,
+		Address:   peer.Name + ":" + protoport[1:],
 		Protocol:  "1.2",
 		KeepAlive: true,
 		TLS:       &tls.Config{InsecureSkipVerify: true},
@@ -179,7 +215,7 @@ func connect(peer electrum.Peer, port string, wordschan, nottestedchan chan Brai
 	mutexconnectedpeers.Unlock()
 
 	if config.Log.Lognet {
-		log.Printf("connected to: %s (# peers: %d)", peer.Name, len(connectedpeers))
+		log.Printf("connected to: %s %s (# peers: %d)", peer.Name, protoport, len(connectedpeers))
 	}
 
 	mutexdiscoveredpeers.Lock()
