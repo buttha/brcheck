@@ -237,6 +237,7 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 	var pass string
 	var numrows uint64
 	var lastloop bool // to do another loop when stdin is finished, to be sure everything is checked
+
 	for {
 		numrows = 0
 		iter := db.NewIterator(util.BytesPrefix([]byte("totest|")), nil)
@@ -271,6 +272,13 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 			if numrows == 1000 {
 				break // otherwise goqueue doesn't have data until loop ends
 			}
+
+			if config.Core.Autobrainspeed {
+				for atomic.LoadUint64(&statbrainsgenerated) > atomic.LoadUint64(&statminutetests) {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+
 		}
 		iter.Release()
 

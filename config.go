@@ -24,11 +24,16 @@ type configDb struct {
 	Exportdbinterval uint64
 }
 
+type configCore struct {
+	Autobrainspeed bool
+}
+
 // Config : configuration type
 type Config struct {
 	Log  configLog
 	Conn configConn
 	Db   configDb
+	Core configCore
 }
 
 // ParseConfig : reads command line params and config file
@@ -46,6 +51,7 @@ func ParseConfig() (Config, error) {
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
 	paramExportdbinterval := flag.Uint64("exportdbinterval", 0, "export every exportdbinterval seconds (0 to disable cron: db will be always exported when program stops)")
+	paramAutobrainspeed := flag.Bool("autobrainspeed", true, "true = auto-adjust brainwallet's generation speed using electrum's test/second as parameter\nfalse = generate brainwallet at full speed (unnecessary high cpu usage)")
 	flag.Parse()
 
 	// set default values
@@ -58,6 +64,7 @@ func ParseConfig() (Config, error) {
 	configuration.Db.Exportdbfile = *paramExportdbfile
 	configuration.Db.Exportdbtable = *paramExportdbtable
 	configuration.Db.Exportdbinterval = *paramExportdbinterval
+	configuration.Core.Autobrainspeed = *paramAutobrainspeed
 
 	if *paramConfigFile != "" { // read config file
 		if _, err := toml.DecodeFile(*paramConfigFile, &configuration); err != nil {
@@ -86,6 +93,8 @@ func ParseConfig() (Config, error) {
 			configuration.Db.Exportdbtable = *paramExportdbtable
 		case "exportdbinterval":
 			configuration.Db.Exportdbinterval = *paramExportdbinterval
+		case "autobrainspeed":
+			configuration.Core.Autobrainspeed = *paramAutobrainspeed
 		}
 	}
 	flag.Visit(visitor)

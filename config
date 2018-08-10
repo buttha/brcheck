@@ -15,3 +15,7 @@ dbdir = "./database" # db directory
 exportdbfile = "./brcheck.db" # export database filename (sqlite3) leave empty to disable export
 exportdbtable = "brains" # export db tablename
 exportdbinterval =  60 # export every exportinterval seconds (set to 0 to disable cron). db will be always exported when program stops
+
+[core]
+autobrainspeed = true   # true = auto-adjust brainwallet's generation speed using electrum's test/second as parameter (that's the default)
+                        # false = generate brainwallet at full speed (unnecessary high cpu usage)
