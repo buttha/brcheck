@@ -40,7 +40,6 @@ type connectedpeer struct {
 	wordschan     chan BrainAddress
 	nottestedchan chan BrainAddress
 	resultschan   chan BrainResult
-	closeconn     chan bool // to force disconnection
 }
 
 var connectedpeers = make(map[string]connectedpeer)  // current connections
@@ -131,18 +130,6 @@ func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan cha
 	}
 }
 
-// Resetconnections : reset all connections
-func Resetconnections() {
-	if config.Log.Lognet {
-		log.Println("resetting all connections")
-	}
-	for _, peer := range connectedpeers {
-		if peer.connection != nil {
-			peer.closeconn <- true
-		}
-	}
-}
-
 func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
 
 	defer notconnecting(peer.Name)
@@ -201,15 +188,12 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 
 	mutexconnectedpeers.Lock()
 
-	close := make(chan bool, 1) // buffered, so I don't have to wait connection shutdown
-
 	connectedpeers[peer.Name] = connectedpeer{
 		peer:          peer,
 		connection:    client,
 		wordschan:     wordschan,
 		nottestedchan: nottestedchan,
 		resultschan:   resultschan,
-		closeconn:     close,
 	}
 
 	mutexconnectedpeers.Unlock()
@@ -253,16 +237,6 @@ func serveRequests(peer connectedpeer) {
 	numrequests := 0
 
 	for {
-
-		// check if disconnetion is required
-		select {
-		case <-peer.closeconn:
-			if config.Log.Lognet {
-				log.Printf("disconnected from: %s (# peers: %d): forced connection shutdown", peer.peer.Name, len(connectedpeers)-1)
-			}
-			return
-		default:
-		}
 
 		req = <-peer.wordschan
 
