@@ -33,6 +33,7 @@ type BrainResult struct {
 
 var config Config
 var stattotaltests, statminutetests, statfound, statbrainsgenerated uint64 // for stats
+var statsdbtotest, statsdbconverted, statsdbtesting, statsdbresult uint64  // for db stats
 var activetests uint64
 var mutexactivetests = &sync.Mutex{}
 var exportingdb bool
@@ -98,6 +99,8 @@ func main() {
 		return
 	*/
 
+	statsdb(db) // initialize variables about db stats
+
 	shutdowngobrains := make(chan bool)  // used to stop gobrains (by manageshutdown)
 	shutdowngoqueue := make(chan bool)   // used to stop goqueue (by manageshutdown)
 	shutdowngoresults := make(chan bool) // used to stop goresults (by manageshutdown)
@@ -132,6 +135,7 @@ func main() {
 				fmt.Println("error writing stdin to db:", err.Error())
 				return
 			}
+			atomic.AddUint64(&statsdbtotest, 1)
 			lines++
 			if lines == 100000 { // "unlock" db and let other goroutines work
 				time.Sleep(time.Second)
@@ -174,6 +178,26 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 	}()
 }
 
+func statsdb(db *leveldb.DB) {
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		key := string(iter.Key())
+		if strings.HasPrefix(key, "totest|") {
+			atomic.AddUint64(&statsdbtotest, 1)
+		}
+		if strings.HasPrefix(key, "converted|") {
+			atomic.AddUint64(&statsdbconverted, 1)
+		}
+		if strings.HasPrefix(key, "testing|") {
+			atomic.AddUint64(&statsdbtesting, 1)
+		}
+		if strings.HasPrefix(key, "result|") {
+			atomic.AddUint64(&statsdbresult, 1)
+		}
+	}
+	iter.Release()
+}
+
 func stats(db *leveldb.DB) {
 	if config.Log.Logstats {
 
@@ -187,40 +211,18 @@ func stats(db *leveldb.DB) {
 
 				num++
 
-				iter := db.NewIterator(nil, nil)
-				numtotest := 0
-				numconverted := 0
-				numtesting := 0
-				numresult := 0
-				for iter.Next() {
-					key := string(iter.Key())
-					if strings.HasPrefix(key, "totest|") {
-						numtotest++
-					}
-					if strings.HasPrefix(key, "converted|") {
-						numconverted++
-					}
-					if strings.HasPrefix(key, "testing|") {
-						numtesting++
-					}
-					if strings.HasPrefix(key, "result|") {
-						numresult++
-					}
-				}
-				iter.Release()
-
 				avgsec := float64(atomic.LoadUint64(&statminutetests)) / 60.0
 				brainsgeneratedpersec := float64(atomic.LoadUint64(&statbrainsgenerated)) / 60.0
 
 				avgavgsec = (avgavgsec*float64(num-1) + avgsec) / float64(num)
 				timetocomplete := ""
 				if avgavgsec != 0 {
-					timetocomplete = secondsToHuman(int(float64(numtotest+numconverted) / avgavgsec))
+					timetocomplete = secondsToHuman(int(float64(atomic.LoadUint64(&statsdbtotest)+atomic.LoadUint64(&statsdbconverted)) / avgavgsec))
 				} else {
 					timetocomplete = "NA"
 				}
 
-				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, numtotest, numconverted, numtesting, numresult, timetocomplete)
+				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, atomic.LoadUint64(&statsdbtotest), atomic.LoadUint64(&statsdbconverted), atomic.LoadUint64(&statsdbtesting), atomic.LoadUint64(&statsdbresult), timetocomplete)
 
 				atomic.StoreUint64(&statminutetests, 0)
 				atomic.StoreUint64(&statbrainsgenerated, 0)
@@ -262,11 +264,13 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 				log.Println("error setting totest -> testing a queue item: ", err.Error())
 				continue
 			}
+			atomic.AddUint64(&statsdbconverted, 1)
 			err = db.Delete(key, nil)
 			if err != nil {
 				log.Println("error removing a testing queue row: ", err.Error())
 				continue
 			}
+			atomic.AddUint64(&statsdbtotest, ^uint64(0))
 			if numrows == 1000 {
 				break // otherwise goqueue doesn't have data until loop ends
 			}
@@ -334,11 +338,13 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 				log.Println("error setting converted -> testing a queue item: ", err.Error())
 				continue
 			}
+			atomic.AddUint64(&statsdbtesting, 1)
 			err = db.Delete(iter.Key(), nil)
 			if err != nil {
 				log.Println("error removing a converted queue row: ", err.Error())
 				continue
 			}
+			atomic.AddUint64(&statsdbconverted, ^uint64(0))
 			mutexactivetests.Lock()
 			atomic.AddUint64(&activetests, 1) // activetests++
 			mutexactivetests.Unlock()
@@ -409,11 +415,13 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 				if err != nil {
 					log.Println("error writing a result in db: " + err.Error())
 				}
+				atomic.AddUint64(&statsdbresult, 1)
 			}
 			err := db.Delete([]byte("testing|"+result.Address.Passphrase), nil)
 			if err != nil {
 				log.Println("error removing a queue item from testing status: " + err.Error())
 			}
+			atomic.AddUint64(&statsdbtesting, ^uint64(0))
 			mutexactivetests.Lock()
 			atomic.AddUint64(&activetests, ^uint64(0)) // activetests--
 			mutexactivetests.Unlock()
