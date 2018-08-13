@@ -13,8 +13,7 @@ type configLog struct {
 }
 
 type configConn struct {
-	Sslonly         bool
-	Resetsingleconn int
+	Sslonly bool
 }
 
 type configDb struct {
@@ -46,7 +45,6 @@ func ParseConfig() (Config, error) {
 	paramLogstats := flag.Bool("logstats", true, "log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
 	paramSslonly := flag.Bool("sslonly", false, "connect only to SSL nodes")
-	paramResetsingleconn := flag.Int("resetsingleconn", 100, "reset a connection affer resetsingleconn requests")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
@@ -59,7 +57,6 @@ func ParseConfig() (Config, error) {
 	configuration.Log.Logstats = *paramLogstats
 	configuration.Log.Logresult = *paramLogresult
 	configuration.Conn.Sslonly = *paramSslonly
-	configuration.Conn.Resetsingleconn = *paramResetsingleconn
 	configuration.Db.Dbdir = *paramDbdir
 	configuration.Db.Exportdbfile = *paramExportdbfile
 	configuration.Db.Exportdbtable = *paramExportdbtable
@@ -83,8 +80,6 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Logresult = *paramLogresult
 		case "sslonly":
 			configuration.Conn.Sslonly = *paramSslonly
-		case "resetsingleconn":
-			configuration.Conn.Resetsingleconn = *paramResetsingleconn
 		case "dbdir":
 			configuration.Db.Dbdir = *paramDbdir
 		case "exportdbfile":

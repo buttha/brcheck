@@ -247,7 +247,10 @@ func serveRequests(peer connectedpeer) {
 	defer deletepeer(peer)
 	defer disconnect(peer)
 
-	numrequests := 0
+	/* automatically disconnect afer 1 hour to circumvent BANDWIDTH_LIMIT
+	see http://electrumx.readthedocs.io/en/latest/environment.html#envvar-BANDWIDTH_LIMIT
+	*/
+	start := time.Now()
 
 	for {
 
@@ -347,11 +350,9 @@ func serveRequests(peer connectedpeer) {
 			NumTxCompressed:       numtxC,
 		}
 
-		numrequests++
-		// reset connection if maximum request's number is reached
-		if numrequests >= config.Conn.Resetsingleconn {
+		if time.Since(start) >= time.Hour {
 			if config.Log.Lognet {
-				log.Printf("Disconnected from: %s: reached %d requests", peer.peer.Name, config.Conn.Resetsingleconn)
+				log.Printf("Disconnected from: %s: reached 1 hour connection", peer.peer.Name)
 			}
 			return
 		}
