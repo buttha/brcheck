@@ -49,9 +49,9 @@ func main() {
 		see https://flaviocopes.com/golang-profiling/
 	*/
 
-	wordschan := make(chan BrainAddress, 100) // chan for string to test
-	nottestedchan := make(chan BrainAddress)  // if a goroutine failed to test a string (ex. server disconnected, ecc...) then string will be send back through this channel
-	resultschan := make(chan BrainResult)     // tests' results
+	wordschan := make(chan BrainAddress, 100)     // chan for string to test
+	nottestedchan := make(chan BrainAddress, 100) // if a goroutine failed to test a string (ex. server disconnected, ecc...) then string will be send back through this channel
+	resultschan := make(chan BrainResult, 100)    // tests' results
 
 	cfg, err := ParseConfig() // reads command line params and config file
 	if err != nil {
