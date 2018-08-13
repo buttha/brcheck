@@ -348,7 +348,11 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 			mutexactivetests.Lock()
 			atomic.AddUint64(&activetests, 1) // activetests++
 			mutexactivetests.Unlock()
-			wordschan <- address
+			select {
+			case wordschan <- address:
+			case <-shutdowngoqueue:
+				return
+			}
 			if numrows == 1000 {
 				break // release db and memory
 			}

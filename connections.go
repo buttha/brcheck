@@ -85,48 +85,59 @@ func Establishconnections(wordschan, nottestedchan chan BrainAddress, resultscha
 
 // Keepconnections : reach and mantain max connection's number via peer discovery algo
 func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan chan BrainResult) {
-	var connected, lastconnected int
+	var lastnumconnected, lastnumdiscovered int
 
 	time.Sleep(time.Second * 5) // wait Establishconnections
 	for {
+
 		mutexdiscoveredpeers.Lock()
 		mutexconnectedpeers.Lock()
 		mutexconnectingpeers.Lock()
 
-		connected = len(connectedpeers)
-		if connected != lastconnected { // try only if connections' number is changed
-			for _, disco := range discoveredpeers { // search for a peer...
+		for _, disco := range discoveredpeers { // search for a peer...
 
-				if connectedpeers[disco.Name].connection != nil || connectingpeers[disco.Name] { // already connected or there's already a connection attempt
-					continue
-				}
-
-				protoport := ""
-				for _, feat := range disco.Features {
-					if string(feat[0]) == "s" {
-						protoport = feat
-						break
-					}
-					if !config.Conn.Sslonly && string(feat[0]) == "t" {
-						protoport = feat
-					}
-				}
-
-				if protoport == "" { // config.Conn.Sslonly but peer has tcp only
-					continue
-				}
-
-				connectingpeers[disco.Name] = true
-				go connect(disco, protoport, wordschan, nottestedchan, resultschan)
-
+			if connectedpeers[disco.Name].connection != nil || connectingpeers[disco.Name] { // already connected or there's already a connection attempt
+				continue
 			}
+
+			protoport := ""
+			for _, feat := range disco.Features {
+				if string(feat[0]) == "s" {
+					protoport = feat
+					break
+				}
+				if !config.Conn.Sslonly && string(feat[0]) == "t" {
+					protoport = feat
+				}
+			}
+
+			if protoport == "" { // config.Conn.Sslonly but peer has tcp only
+				continue
+			}
+
+			connectingpeers[disco.Name] = true
+			go connect(disco, protoport, wordschan, nottestedchan, resultschan)
+
 		}
-		lastconnected = connected
+
 		mutexconnectingpeers.Unlock()
 		mutexconnectedpeers.Unlock()
 		mutexdiscoveredpeers.Unlock()
 
-		time.Sleep(time.Second)
+		for { // wait
+			mutexconnectedpeers.Lock()
+			mutexdiscoveredpeers.Lock()
+			if len(connectedpeers) < lastnumconnected || len(discoveredpeers) > lastnumdiscovered {
+				mutexconnectedpeers.Unlock()
+				mutexdiscoveredpeers.Unlock()
+				break
+			}
+			lastnumconnected = len(connectedpeers)
+			lastnumdiscovered = len(discoveredpeers)
+			mutexconnectedpeers.Unlock()
+			mutexdiscoveredpeers.Unlock()
+			time.Sleep(time.Second)
+		}
 	}
 }
 
@@ -139,7 +150,7 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 		Protocol:  "1.2",
 		KeepAlive: true,
 		TLS:       &tls.Config{InsecureSkipVerify: true},
-		Timeout:   5, // seconds
+		//Timeout:   5, // seconds
 		Reconnect: false,
 	})
 
@@ -196,11 +207,11 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 		resultschan:   resultschan,
 	}
 
-	mutexconnectedpeers.Unlock()
-
 	if config.Log.Lognet {
 		log.Printf("connected to: %s %s (# peers: %d)", peer.Name, protoport, len(connectedpeers))
 	}
+
+	mutexconnectedpeers.Unlock()
 
 	mutexdiscoveredpeers.Lock()
 
@@ -216,7 +227,9 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 
 	mutexdiscoveredpeers.Unlock()
 
+	mutexconnectedpeers.Lock()
 	go serveRequests(connectedpeers[peer.Name])
+	mutexconnectedpeers.Unlock()
 
 	return
 }
@@ -350,7 +363,9 @@ func serveRequests(peer connectedpeer) {
 func servererr(peer connectedpeer, req BrainAddress, operation string, err error) {
 	peer.nottestedchan <- req // send back request so another server will serve it
 	if config.Log.Lognet {
+		mutexconnectedpeers.Lock()
 		log.Printf("Disconnected from: %s (# peers: %d) requesting \"%s\" on address %+v err: %s", peer.peer.Name, len(connectedpeers)-1, operation, req, err)
+		mutexconnectedpeers.Unlock()
 	}
 }
 
