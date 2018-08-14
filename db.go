@@ -139,8 +139,9 @@ func fixQueue(db *leveldb.DB) {
 }
 
 func dumpdb(db *leveldb.DB) {
+	iter := db.NewIterator(util.BytesPrefix([]byte("converted|")), nil)
 	//iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
-	iter := db.NewIterator(nil, nil)
+	//iter := db.NewIterator(nil, nil)
 	for iter.Next() {
 		key := iter.Key()
 		value := iter.Value()

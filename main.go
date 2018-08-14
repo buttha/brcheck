@@ -155,27 +155,31 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
-		log.Println("...stopping brainwallet's generations...")
-		select {
-		case shutdowngobrains <- true:
-		case <-time.After(10 * time.Second):
-			log.Println("...time out: forced close...")
-		}
-		log.Println("...stopping queue manager...")
-		select {
-		case shutdowngoqueue <- true:
-		case <-time.After(10 * time.Second):
-			log.Println("...time out: forced close...")
-		}
-		log.Println("...stopping results manager...")
-		select {
-		case shutdowngoresults <- true:
-		case <-time.After(10 * time.Second):
-			log.Println("...time out: forced close...")
-		}
-		log.Println("...done")
+		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults)
 		os.Exit(0)
 	}()
+}
+
+func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults chan bool) {
+	log.Println("...stopping brainwallet's generations...")
+	select {
+	case shutdowngobrains <- true:
+	case <-time.After(10 * time.Second):
+		log.Println("...time out: forced close...")
+	}
+	log.Println("...stopping queue manager...")
+	select {
+	case shutdowngoqueue <- true:
+	case <-time.After(10 * time.Second):
+		log.Println("...time out: forced close...")
+	}
+	log.Println("...stopping results manager...")
+	select {
+	case shutdowngoresults <- true:
+	case <-time.After(10 * time.Second):
+		log.Println("...time out: forced close...")
+	}
+	log.Println("...done")
 }
 
 func statsdb(db *leveldb.DB) {
@@ -435,6 +439,8 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 
 		case <-shutdowngoresults:
 			return
+
+		default:
 		}
 	}
 }
