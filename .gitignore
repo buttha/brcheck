@@ -7,3 +7,4 @@ brcheck
 debug
 *.pdf
 database
+temp/

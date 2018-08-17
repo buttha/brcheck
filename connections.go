@@ -256,20 +256,18 @@ func serveRequests(peer connectedpeer) {
 
 		req = <-peer.wordschan
 
-		//balance, err := peer.connection.ScripthashBalance(req.Scripthash)
-		balance, err := peer.connection.AddressBalance(req.Address)
+		balance, err := peer.connection.ScripthashBalance(req.Scripthash)
+		//balance, err := peer.connection.AddressBalance(req.Address)
 		if err != nil {
 			servererr(peer, req, "AddressBalance", err)
 			return
 		}
-		//balanceC, err := peer.connection.ScripthashBalance(req.CompressedScripthash)
-		balanceC, err := peer.connection.AddressBalance(req.CompressedAddress)
+		balanceC, err := peer.connection.ScripthashBalance(req.CompressedScripthash)
+		//balanceC, err := peer.connection.AddressBalance(req.CompressedAddress)
 		if err != nil {
 			servererr(peer, req, "AddressBalanceCompressed", err)
 			return
 		}
-
-		//history, err := peer.connection.ScripthashHistory(req.Scripthash)
 
 		/*
 			for "response too large" issue see
@@ -277,7 +275,8 @@ func serveRequests(peer connectedpeer) {
 			https://github.com/spesmilo/electrum/issues/4315
 		*/
 		toolarge := false
-		history, err := peer.connection.AddressHistory(req.Address)
+		history, err := peer.connection.ScripthashHistory(req.Scripthash)
+		//history, err := peer.connection.AddressHistory(req.Address)
 		if err != nil {
 			if strings.HasPrefix(err.Error(), "response too large") {
 				toolarge = true
@@ -287,9 +286,9 @@ func serveRequests(peer connectedpeer) {
 			}
 		}
 
-		//historyC, err := peer.connection.ScripthashHistory(req.CompressedScripthash)
 		toolargeC := false
-		historyC, err := peer.connection.AddressHistory(req.CompressedAddress)
+		historyC, err := peer.connection.ScripthashHistory(req.CompressedScripthash)
+		//historyC, err := peer.connection.AddressHistory(req.CompressedAddress)
 		if err != nil {
 			if strings.HasPrefix(err.Error(), "response too large") {
 				toolargeC = true

@@ -396,19 +396,6 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 	var result BrainResult
 	for {
 
-		mutexactivetests.Lock()
-		if atomic.LoadUint64(&activetests) == 0 {
-			select {
-			case <-finishedqueue:
-				mutexactivetests.Unlock()
-				finishedtesting <- true
-				<-shutdowngoresults // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
-				return
-			default:
-			}
-		}
-		mutexactivetests.Unlock()
-
 		select {
 		case nottested = <-nottestedchan:
 			wordschan <- nottested // resubmit to another server
@@ -440,7 +427,20 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 		case <-shutdowngoresults:
 			return
 
-		default:
+		case <-time.After(time.Second):
+			mutexactivetests.Lock()
+			if atomic.LoadUint64(&activetests) == 0 {
+				select {
+				case <-finishedqueue:
+					mutexactivetests.Unlock()
+					finishedtesting <- true
+					<-shutdowngoresults // to permit shutdown routine to end (if it's waiting for shutdown chan to be read)
+					return
+				default:
+				}
+			}
+			mutexactivetests.Unlock()
+
 		}
 	}
 }

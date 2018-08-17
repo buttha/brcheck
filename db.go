@@ -46,8 +46,10 @@ func opennExportDb() (*sql.DB, error) {
 		LastTxTime,
 		LastTxTimeCompressed,
 		Address,
+		Scripthash,
 		PrivkeyWIF,         
-		CompressedAddress,   
+		CompressedAddress,
+		CompressedScripthash, 
 		CompressedPrivkeyWIF,
 		NumTx,
 		NumTxCompressed,
@@ -61,9 +63,9 @@ func opennExportDb() (*sql.DB, error) {
 
 	insertStmt, err = db.Prepare(`
 	INSERT OR REPLACE INTO ` + config.Db.Exportdbtable + `
-	(Passphrase, Address, PrivkeyWIF, CompressedAddress, CompressedPrivkeyWIF, 
+	(Passphrase, Address, Scripthash, PrivkeyWIF, CompressedAddress, CompressedScripthash, CompressedPrivkeyWIF, 
 	Confirmed, Unconfirmed, LastTxTime, NumTx, ConfirmedCompressed, UnconfirmedCompressed, LastTxTimeCompressed, NumTxCompressed) 
-	values(?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?)
+	values(?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return db, err
@@ -102,7 +104,7 @@ func doexportdb(db *leveldb.DB, exportdb *sql.DB) {
 				log.Println("exportdb: error decoding a result row:", err.Error())
 				continue
 			}
-			_, err = insertStmt.Exec(brain.Address.Passphrase, brain.Address.Address, brain.Address.PrivkeyWIF, brain.Address.CompressedAddress, brain.Address.CompressedPrivkeyWIF, brain.Confirmed, brain.Unconfirmed, brain.LastTxTime, brain.NumTx, brain.ConfirmedCompressed, brain.UnconfirmedCompressed, brain.LastTxTimeCompressed, brain.NumTxCompressed)
+			_, err = insertStmt.Exec(brain.Address.Passphrase, brain.Address.Address, brain.Address.Scripthash, brain.Address.PrivkeyWIF, brain.Address.CompressedAddress, brain.Address.CompressedScripthash, brain.Address.CompressedPrivkeyWIF, brain.Confirmed, brain.Unconfirmed, brain.LastTxTime, brain.NumTx, brain.ConfirmedCompressed, brain.UnconfirmedCompressed, brain.LastTxTimeCompressed, brain.NumTxCompressed)
 			if err != nil {
 				log.Println("exportdb: error writing a result row:", err.Error())
 				continue
