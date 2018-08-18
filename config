@@ -1,9 +1,10 @@
 # sample brcheck config file
 
 [log]
-lognet = true # log network's activity (default: false)
+lognet = false # log network's activity (default: true)
 logstats = true # statistics' log (default: true)
 logresult = false # log positive results (default: true)
+logcrawler = true # log crawler's activity (default: true)
 
 [conn]
 sslonly = true # connect only to SSL nodes (default: false)
@@ -17,3 +18,9 @@ exportdbinterval =  60 # export every exportinterval seconds (set to 0 to disabl
 [core]
 autobrainspeed = true   # true = auto-adjust brainwallet's generation speed using electrum's test/second as parameter (that's the default)
                         # false = generate brainwallet at full speed (unnecessary high cpu usage)
+
+[crawler]
+starturl = "https://www.blockchain.com/explorer" # startup words extraction page (leave empty "" to disable crawling)
+followlinks = 2 # follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N (default: 0)
+maxconcurrency = 10 # max concurrent number of url fetched. WARNING: high memory usage (default: 10)
+iterator = 10 # number of words (default: 10)

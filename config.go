@@ -7,9 +7,10 @@ import (
 )
 
 type configLog struct {
-	Lognet    bool
-	Logstats  bool
-	Logresult bool
+	Lognet     bool
+	Logstats   bool
+	Logresult  bool
+	Logcrawler bool
 }
 
 type configConn struct {
@@ -27,12 +28,20 @@ type configCore struct {
 	Autobrainspeed bool
 }
 
+type configCrawler struct {
+	Starturl       string
+	Followlinks    int64
+	Maxconcurrency int64
+	Iterator       uint64
+}
+
 // Config : configuration type
 type Config struct {
-	Log  configLog
-	Conn configConn
-	Db   configDb
-	Core configCore
+	Log     configLog
+	Conn    configConn
+	Db      configDb
+	Core    configCore
+	Crawler configCrawler
 }
 
 // ParseConfig : reads command line params and config file
@@ -44,24 +53,34 @@ func ParseConfig() (Config, error) {
 	paramLognet := flag.Bool("lognet", true, "log network activity")
 	paramLogstats := flag.Bool("logstats", true, "log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
+	paramLogcrawler := flag.Bool("logcrawler", true, "log crawler's activity")
 	paramSslonly := flag.Bool("sslonly", false, "connect only to SSL nodes")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
 	paramExportdbinterval := flag.Uint64("exportdbinterval", 0, "export every exportdbinterval seconds (0 to disable cron: db will be always exported when program stops)")
 	paramAutobrainspeed := flag.Bool("autobrainspeed", true, "true = auto-adjust brainwallet's generation speed using electrum's test/second as parameter\nfalse = generate brainwallet at full speed (unnecessary high cpu usage)")
+	paramStarturl := flag.String("starturl", "", "startup words extraction page (leave empty \"\" to disable crawling)")
+	paramFollowlinks := flag.Int64("followlinks", 0, "follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N")
+	paramMaxconcurrency := flag.Int64("maxconcurrency", 10, "max concurrent number of url fetched. WARNING: high memory usage")
+	paramIterator := flag.Uint64("iterator", 10, "0 = disabled ; > 0 number of words")
 	flag.Parse()
 
 	// set default values
 	configuration.Log.Lognet = *paramLognet
 	configuration.Log.Logstats = *paramLogstats
 	configuration.Log.Logresult = *paramLogresult
+	configuration.Log.Logcrawler = *paramLogcrawler
 	configuration.Conn.Sslonly = *paramSslonly
 	configuration.Db.Dbdir = *paramDbdir
 	configuration.Db.Exportdbfile = *paramExportdbfile
 	configuration.Db.Exportdbtable = *paramExportdbtable
 	configuration.Db.Exportdbinterval = *paramExportdbinterval
 	configuration.Core.Autobrainspeed = *paramAutobrainspeed
+	configuration.Crawler.Starturl = *paramStarturl
+	configuration.Crawler.Followlinks = *paramFollowlinks
+	configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
+	configuration.Crawler.Iterator = *paramIterator
 
 	if *paramConfigFile != "" { // read config file
 		if _, err := toml.DecodeFile(*paramConfigFile, &configuration); err != nil {
@@ -78,6 +97,8 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Logstats = *paramLogstats
 		case "logresult":
 			configuration.Log.Logresult = *paramLogresult
+		case "logcrawler":
+			configuration.Log.Logcrawler = *paramLogcrawler
 		case "sslonly":
 			configuration.Conn.Sslonly = *paramSslonly
 		case "dbdir":
@@ -90,6 +111,14 @@ func ParseConfig() (Config, error) {
 			configuration.Db.Exportdbinterval = *paramExportdbinterval
 		case "autobrainspeed":
 			configuration.Core.Autobrainspeed = *paramAutobrainspeed
+		case "starturl":
+			configuration.Crawler.Starturl = *paramStarturl
+		case "followlinks":
+			configuration.Crawler.Followlinks = *paramFollowlinks
+		case "maxconcurrency":
+			configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
+		case "iterator":
+			configuration.Crawler.Iterator = *paramIterator
 		}
 	}
 	flag.Visit(visitor)
