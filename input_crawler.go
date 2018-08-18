@@ -7,20 +7,30 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	"golang.org/x/net/html"
 )
 
-var links = make(map[string]uint64) // links["url"]=3 means: link url for depth 3
-var mutexlinks = &sync.Mutex{}
+/*
+db entries are ( key = value ):
+
+visit_dep|3|link| = link : link to be visited at depth 3
+visit_link|link| = 3 : same (like above)
+
+double entries are for search convenience
+*/
 
 func crawler(db *leveldb.DB) {
 
 	var err error
+
+	purgeDbCrawler(db) // delete all "visit_*" entries
 
 	if config.Log.Logcrawler {
 		log.Println("[CRAWLER] start fetching urls")
@@ -42,21 +52,18 @@ func crawler(db *leveldb.DB) {
 
 		found = false // to stop if there aren't others links to visit
 		fetching = 0  // number of go routines fetching links
-		mutexlinks.Lock()
-		for link, dep := range links {
-			if dep == depth {
-				found = true
-				fetching++
-				go fetch(link, depth, db, done)
-				mutexlinks.Unlock()
-				for fetching >= config.Crawler.Maxconcurrency {
-					err = <-done
-					fetching--
-				}
-				mutexlinks.Lock()
+		iter := db.NewIterator(util.BytesPrefix([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|")), nil)
+		for iter.Next() {
+			found = true
+			fetching++
+			go fetch(string(iter.Value()), depth, db, done)
+			for fetching >= config.Crawler.Maxconcurrency {
+				err = <-done
+				fetching--
+				time.Sleep(time.Second) // for slow cpu usage
 			}
 		}
-		mutexlinks.Unlock()
+		iter.Release()
 
 		for fetching > 0 { // wait until all links are fetched
 			err = <-done
@@ -68,6 +75,8 @@ func crawler(db *leveldb.DB) {
 		}
 
 	}
+
+	purgeDbCrawler(db) // delete all "visit_*" entries
 
 	if config.Log.Logcrawler {
 		log.Println("[CRAWLER] finished fetching urls")
@@ -90,20 +99,13 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 		return
 	}
 
-	/* TOO MANY LINES LOGGED
-	if config.Log.Logcrawler {
-		log.Println("[crawler] fetched depth " + strconv.Itoa(int(depth)) + ": " + link)
-	}
-	*/
-
-	mutexlinks.Lock()
 	for _, link := range dlinks {
-		_, exist := links[link]
-		if !exist {
-			links[link] = depth + 1
+		data, _ := db.Get([]byte("visit_link|"+link+"|"), nil)
+		if data == nil {
+			db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth+1))+"|"+link+"|"), []byte(link), nil)
+			db.Put([]byte("visit_link|"+link+"|"), []byte(strconv.Itoa(int(depth+1))), nil)
 		}
 	}
-	mutexlinks.Unlock()
 
 	//_ = content
 	use(content, db)
@@ -189,8 +191,6 @@ func use(text string, db *leveldb.DB) {
 
 	words := strings.Fields(text)
 
-	lines := 0
-	_ = lines
 	for i := 0; i <= len(words); i++ {
 		for j := i + 1; j <= min(i+int(config.Crawler.Iterator), len(words)); j++ {
 			str := fmt.Sprint(strings.Join(words[i:j], " "))
@@ -201,7 +201,6 @@ func use(text string, db *leveldb.DB) {
 				return
 			}
 			atomic.AddUint64(&statsdbtotest, 1)
-			lines++
 		}
 	}
 

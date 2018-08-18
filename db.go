@@ -7,6 +7,15 @@ testing|word = {json brainwallet} : word converted and under electrum's test  (c
 result|word = {json result} : a positive result is stored as json (testing|word is removed from db)
 
 when program starts and stops, testing|word are resetted into converted|word status, since we don't have a result yet
+
+***************
+
+crawler entries are:
+
+visit_dep|3|link| = link : link to be visited at depth 3
+visit_link|link| = 3 : same (like above)
+
+double entries are for search convenience
 */
 
 package main
@@ -140,8 +149,17 @@ func fixQueue(db *leveldb.DB) {
 	}
 }
 
+func purgeDbCrawler(db *leveldb.DB) {
+	// delete all "visit_*" entries
+	iter := db.NewIterator(util.BytesPrefix([]byte("visit_")), nil)
+	for iter.Next() {
+		db.Delete(iter.Key(), nil)
+	}
+	iter.Release()
+}
+
 func dumpdb(db *leveldb.DB) {
-	iter := db.NewIterator(util.BytesPrefix([]byte("converted|")), nil)
+	iter := db.NewIterator(util.BytesPrefix([]byte("visit_")), nil)
 	//iter := db.NewIterator(util.BytesPrefix([]byte("result|")), nil)
 	//iter := db.NewIterator(nil, nil)
 	for iter.Next() {
@@ -155,6 +173,7 @@ func dumpdb(db *leveldb.DB) {
 
 func closeDb(db *leveldb.DB) {
 	fixQueue(db)
+	purgeDbCrawler(db)
 	db.Close()
 }
 
