@@ -138,6 +138,8 @@ func Keepconnections(wordschan, nottestedchan chan BrainAddress, resultschan cha
 			mutexdiscoveredpeers.Unlock()
 			time.Sleep(time.Second)
 		}
+
+		time.Sleep(time.Second)
 	}
 }
 

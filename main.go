@@ -286,6 +286,7 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 				case <-finishedstdin:
 					lastloop = true
 				default:
+					time.Sleep(2 * time.Second)
 				}
 			}
 		}
@@ -361,6 +362,7 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 				case <-finishedbrains:
 					lastloop = true
 				default:
+					time.Sleep(2 * time.Second)
 				}
 			}
 		}

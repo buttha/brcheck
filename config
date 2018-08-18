@@ -1,7 +1,7 @@
 # sample brcheck config file
 
 [log]
-lognet = false # log network's activity (default: true)
+lognet = true # log network's activity (default: true)
 logstats = true # statistics' log (default: true)
 logresult = false # log positive results (default: true)
 logcrawler = true # log crawler's activity (default: true)

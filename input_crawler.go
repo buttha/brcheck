@@ -23,7 +23,7 @@ func crawler(db *leveldb.DB) {
 	var err error
 
 	if config.Log.Logcrawler {
-		log.Println("[crawler] start fetching urls")
+		log.Println("[CRAWLER] start fetching urls")
 	}
 
 	done := make(chan error)
@@ -70,7 +70,7 @@ func crawler(db *leveldb.DB) {
 	}
 
 	if config.Log.Logcrawler {
-		log.Println("[crawler] finished fetching urls")
+		log.Println("[CRAWLER] finished fetching urls")
 	}
 
 }
@@ -84,7 +84,7 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 	content, dlinks, err := crawl(link)
 	if err != nil {
 		if config.Log.Logcrawler {
-			log.Println("[crawler] error: " + err.Error())
+			log.Println("[CRAWLER] error: " + err.Error())
 		}
 		done <- err
 		return
@@ -98,10 +98,10 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 
 	mutexlinks.Lock()
 	for _, link := range dlinks {
-		//_, exist := links[link]
-		//if !exist {
-		links[link] = depth + 1
-		//}
+		_, exist := links[link]
+		if !exist {
+			links[link] = depth + 1
+		}
 	}
 	mutexlinks.Unlock()
 
