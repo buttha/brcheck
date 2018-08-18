@@ -264,7 +264,7 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 			}
 
 			if config.Core.Autobrainspeed { // computes 30% more brains than tests, to be sure there're always brainwallets to be tested
-				for float64(atomic.LoadUint64(&statbrainsgenerated)) > float64(atomic.LoadUint64(&statminutetests))*1.3 {
+				for float64(atomic.LoadUint64(&statbrainsgenerated)) > float64(atomic.LoadUint64(&statminutetests))*1.3 && atomic.LoadUint64(&statminutetests) != 0 {
 					time.Sleep(10 * time.Millisecond)
 				}
 			}
