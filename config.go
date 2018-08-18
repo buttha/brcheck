@@ -29,10 +29,11 @@ type configCore struct {
 }
 
 type configCrawler struct {
-	Starturl       string
-	Followlinks    int64
-	Maxconcurrency int64
-	Iterator       uint64
+	Starturl         string
+	Followlinks      int64
+	Maxconcurrency   int64
+	Iterator         uint64
+	Autocrawlerspeed bool
 }
 
 // Config : configuration type
@@ -64,6 +65,7 @@ func ParseConfig() (Config, error) {
 	paramFollowlinks := flag.Int64("followlinks", 0, "follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N")
 	paramMaxconcurrency := flag.Int64("maxconcurrency", 10, "max concurrent number of url fetched. WARNING: high memory usage")
 	paramIterator := flag.Uint64("iterator", 10, "0 = disabled ; > 0 number of words")
+	paramAutocrawlerspeed := flag.Bool("autocrawlerspeed", true, "true = auto-adjust generation speed using electrum's test/second as parameter\nfalse = generate at full speed (unnecessary high cpu usage)")
 	flag.Parse()
 
 	// set default values
@@ -81,6 +83,7 @@ func ParseConfig() (Config, error) {
 	configuration.Crawler.Followlinks = *paramFollowlinks
 	configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
 	configuration.Crawler.Iterator = *paramIterator
+	configuration.Crawler.Autocrawlerspeed = *paramAutocrawlerspeed
 
 	if *paramConfigFile != "" { // read config file
 		if _, err := toml.DecodeFile(*paramConfigFile, &configuration); err != nil {
@@ -119,6 +122,8 @@ func ParseConfig() (Config, error) {
 			configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
 		case "iterator":
 			configuration.Crawler.Iterator = *paramIterator
+		case "autocrawlerspeed":
+			configuration.Crawler.Autocrawlerspeed = *paramAutocrawlerspeed
 		}
 	}
 	flag.Visit(visitor)

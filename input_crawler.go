@@ -201,6 +201,13 @@ func use(text string, db *leveldb.DB) {
 				return
 			}
 			atomic.AddUint64(&statsdbtotest, 1)
+
+			if config.Crawler.Autocrawlerspeed { // computes 30% more lines than tests, to be sure there're always lines to be elaborated
+				for float64(atomic.LoadUint64(&statsdbtotest)) > float64(atomic.LoadUint64(&statminutetests))*1.3 {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+
 		}
 	}
 
