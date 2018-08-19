@@ -20,10 +20,12 @@ autobrainspeed = true   # true = auto-adjust brainwallet's generation speed usin
                         # false = generate brainwallet at full speed (unnecessary high cpu usage)
 
 [crawler]
-starturl = "https://bitcoin.org/" # startup words extraction page (leave empty "" to disable crawling)
-followlinks = 2 # follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N (default: 0)
+starturl = "https://bitcoin.org" # startup words extraction page (leave empty "" to disable crawling)
+followlinks = -1 # follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N (default: 0)
 samedomain = true # follow same domain only urls (don't visit sites outside starturl) (default: true)
 maxconcurrency = 10 # max concurrent number of url fetched. WARNING: high memory usage (default: 10)
 iterator = 5 # number of words (default: 10)
 autocrawlerspeed = true # true = auto-adjust generation speed using electrum's test/second as parameter (that's the default)
                         # false = generate at full speed (unnecessary high cpu usage)
+                        # NOTE: with this enabled, "Time to complete" estimation doesn't work correctly, since we never have
+                        # total amount of tests to be done

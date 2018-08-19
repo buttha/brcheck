@@ -389,9 +389,12 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 				if config.Log.Logresult {
 					log.Printf("%+v\n", result)
 				}
-				atomic.AddUint64(&statfound, 1)
+				data, err := db.Get([]byte("result|"+result.Address.Passphrase), nil) // is it a duplicate?
+				if data == nil {
+					atomic.AddUint64(&statfound, 1)
+				}
 				resjson, _ := json.Marshal(result)
-				err := db.Put([]byte("result|"+result.Address.Passphrase), resjson, nil)
+				err = db.Put([]byte("result|"+result.Address.Passphrase), resjson, nil)
 				if err != nil {
 					log.Println("error writing a result in db: " + err.Error())
 				}
