@@ -125,7 +125,7 @@ func main() {
 
 	// main cicle
 
-	if config.Crawler.Starturl != "" || resumecrawl(db) { // web crawler
+	if config.Crawler.Starturl != "" || resumecrawl(db) > 0 { // web crawler
 		crawlerrunnig = true
 		crawler(shutdowncrawler, db)
 		crawlerrunnig = false

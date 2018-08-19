@@ -35,9 +35,10 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 	done := make(chan error)
 
-	resume := resumecrawl(db)
+	lastdepth := resumecrawl(db)
 
-	if !resume { // not resuming: let's start from config.Crawler.Starturl
+	if lastdepth == 0 { // not resuming: let's start from config.Crawler.Starturl
+		lastdepth = 1
 		if config.Log.Logcrawler {
 			log.Println("[CRAWLER] start fetching urls")
 		}
@@ -53,11 +54,11 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 		}
 	}
 
-	for depth = 1; int64(depth) <= config.Crawler.Followlinks || config.Crawler.Followlinks == -1; depth++ {
+	for depth = lastdepth; int64(depth) <= config.Crawler.Followlinks || config.Crawler.Followlinks == -1; depth++ {
 
 		found = false // to stop if there aren't others links to visit
 		fetching = 0  // number of go routines fetching links
-		iter := db.NewIterator(util.BytesPrefix([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|")), nil)
+		iter := db.NewIterator(util.BytesPrefix([]byte("visit_dep|"+strconv.FormatUint(depth, 10)+"|")), nil)
 		for iter.Next() {
 			if strings.HasSuffix(string(iter.Key()), "|0|") { // not visited
 				found = true
@@ -115,15 +116,22 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 }
 
-func resumecrawl(db *leveldb.DB) bool {
-	found := false
+func resumecrawl(db *leveldb.DB) uint64 { // search the minium depth not visited yet
+	var mindepth uint64
 	iter := db.NewIterator(util.BytesPrefix([]byte("visit_link|")), nil)
 	for iter.Next() {
-		found = true
-		break
+		if strings.HasSuffix(string(iter.Key()), "|0|") {
+			val, _ := strconv.ParseUint(string(iter.Value()), 10, 64)
+			if mindepth == 0 || val < mindepth {
+				mindepth = uint64(val)
+			}
+		}
+		if mindepth == 1 {
+			break
+		}
 	}
 	iter.Release()
-	return found
+	return mindepth
 }
 
 func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
@@ -144,17 +152,17 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 	for _, url := range dlinks {
 		data, _ := db.Get([]byte("visit_link|"+url+"|0|"), nil)
 		if data == nil {
-			db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth+1))+"|"+url+"|0|"), []byte(url), nil)
-			db.Put([]byte("visit_link|"+url+"|0|"), []byte(strconv.Itoa(int(depth+1))), nil)
+			db.Put([]byte("visit_dep|"+strconv.FormatUint(depth+1, 10)+"|"+url+"|0|"), []byte(url), nil)
+			db.Put([]byte("visit_link|"+url+"|0|"), []byte(strconv.FormatUint(depth+1, 10)), nil)
 		}
 	}
 
 	//_ = content
 	use(content, db)
 	// lets mark it as visited
-	db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|"+link+"|1|"), []byte(link), nil)
-	db.Put([]byte("visit_link|"+link+"|1|"), []byte(strconv.Itoa(int(depth))), nil)
-	db.Delete([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|"+link+"|0|"), nil)
+	db.Put([]byte("visit_dep|"+strconv.FormatUint(depth, 10)+"|"+link+"|1|"), []byte(link), nil)
+	db.Put([]byte("visit_link|"+link+"|1|"), []byte(strconv.FormatUint(depth, 10)), nil)
+	db.Delete([]byte("visit_dep|"+strconv.FormatUint(depth, 10)+"|"+link+"|0|"), nil)
 	db.Delete([]byte("visit_link|"+link+"|0|"), nil)
 }
 
