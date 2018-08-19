@@ -144,6 +144,11 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
 		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler)
+		if exportingdb {
+			doexportdb(db, exportdb)
+			closeExportDb(exportdb)
+		}
+		closeDb(db)
 		os.Exit(0)
 	}()
 }
