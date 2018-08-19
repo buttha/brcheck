@@ -26,7 +26,7 @@ visit_link|link|0| = 3 : same (like above)
 double entries are for search convenience
 */
 
-func crawler(db *leveldb.DB) {
+func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 	var err error
 	var depth uint64
@@ -69,12 +69,30 @@ func crawler(db *leveldb.DB) {
 					time.Sleep(time.Second) // for slow cpu usage
 				}
 			}
+
+			select {
+			case <-shutdowncrawler:
+				for fetching > 0 {
+					err = <-done
+					fetching--
+				}
+				iter.Release()
+				return
+			default:
+			}
+
 		}
 		iter.Release()
 
 		for fetching > 0 { // wait until all links are fetched
 			err = <-done
 			fetching--
+		}
+
+		select {
+		case <-shutdowncrawler:
+			return
+		default:
 		}
 
 		if found == false { // no other links to visit
@@ -238,10 +256,9 @@ func use(text string, db *leveldb.DB) {
 			}
 			atomic.AddUint64(&statsdbtotest, 1)
 
-			if config.Crawler.Autocrawlerspeed { // computes 30% more lines than tests, to be sure there're always lines to be elaborated
-				for float64(atomic.LoadUint64(&statsdbtotest)) > float64(atomic.LoadUint64(&statminutetests))*1.3 && atomic.LoadUint64(&statminutetests) != 0 {
-					time.Sleep(10 * time.Millisecond)
-				}
+			// computes 30% more lines than tests, to be sure there're always lines to be elaborated
+			for config.Crawler.Autocrawlerspeed && float64(atomic.LoadUint64(&statsdbtotest)) > float64(atomic.LoadUint64(&statminutetests))*1.3 && atomic.LoadUint64(&statminutetests) != 0 {
+				time.Sleep(10 * time.Millisecond)
 			}
 
 		}

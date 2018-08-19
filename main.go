@@ -36,8 +36,10 @@ var statsdbtotest, statsdbconverted, statsdbtesting, statsdbresult uint64  // fo
 var activetests uint64
 var mutexactivetests = &sync.Mutex{}
 var exportingdb bool
+var crawlerrunnig bool // used by manageshutdown to see if crawler must be stopped
 
 func main() {
+
 	// defer profile.Start(profile.MemProfile).Stop() // memory
 	// defer profile.Start().Stop() // cpu
 	/*
@@ -103,8 +105,9 @@ func main() {
 	shutdowngobrains := make(chan bool)  // used to stop gobrains (by manageshutdown)
 	shutdowngoqueue := make(chan bool)   // used to stop goqueue (by manageshutdown)
 	shutdowngoresults := make(chan bool) // used to stop goresults (by manageshutdown)
+	shutdowncrawler := make(chan bool)   // used to stop crawler, if running (by manageshutdown)
 
-	manageshutdown(db, exportdb, shutdowngobrains, shutdowngoqueue, shutdowngoresults) // detect program interruption
+	manageshutdown(db, exportdb, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler) // detect program interruption
 
 	stats(db) // manage statistics
 
@@ -123,7 +126,9 @@ func main() {
 	// main cicle
 
 	if config.Crawler.Starturl != "" || resumecrawl(db) { // web crawler
-		crawler(db)
+		crawlerrunnig = true
+		crawler(shutdowncrawler, db)
+		crawlerrunnig = false
 	}
 	stdin(db)
 
@@ -132,18 +137,18 @@ func main() {
 
 }
 
-func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults chan bool) { // detect program interrupt
+func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
-		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults)
+		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler)
 		os.Exit(0)
 	}()
 }
 
-func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults chan bool) {
+func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) {
 	log.Println("...stopping brainwallet's generations...")
 	select {
 	case shutdowngobrains <- true:
@@ -161,6 +166,15 @@ func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults chan bool) {
 	case shutdowngoresults <- true:
 	case <-time.After(10 * time.Second):
 		log.Println("...time out: forced close...")
+	}
+	if crawlerrunnig {
+		config.Crawler.Autocrawlerspeed = false // to unlock wait timeout and speed process termination
+		log.Println("...stopping crawler...")
+		select {
+		case shutdowncrawler <- true:
+		case <-time.After(30 * time.Second):
+			log.Println("...time out: forced close...")
+		}
 	}
 	log.Println("...done")
 }
