@@ -20,8 +20,8 @@ import (
 /*
 db entries are ( key = value ):
 
-visit_dep|3|link| = link : link to be visited at depth 3
-visit_link|link| = 3 : same (like above)
+visit_dep|3|link|0| = link : link to be visited at depth 3; *|0| = not vistied *|1| = visited
+visit_link|link|0| = 3 : same (like above)
 
 double entries are for search convenience
 */
@@ -29,38 +29,45 @@ double entries are for search convenience
 func crawler(db *leveldb.DB) {
 
 	var err error
-
-	purgeDbCrawler(db) // delete all "visit_*" entries
-
-	if config.Log.Logcrawler {
-		log.Println("[CRAWLER] start fetching urls")
-	}
-
-	done := make(chan error)
-
-	go fetch(config.Crawler.Starturl, 0, db, done)
-	err = <-done
-
-	if err != nil {
-		return
-	}
-
 	var depth uint64
 	var found bool
 	var fetching int64
+
+	done := make(chan error)
+
+	resume := resumecrawl(db)
+
+	if !resume { // not resuming: let's start from config.Crawler.Starturl
+		if config.Log.Logcrawler {
+			log.Println("[CRAWLER] start fetching urls")
+		}
+
+		go fetch(config.Crawler.Starturl, 0, db, done)
+		err = <-done
+		if err != nil {
+			return
+		}
+	} else { // resume
+		if config.Log.Logcrawler {
+			log.Println("[CRAWLER] resuming crawling")
+		}
+	}
+
 	for depth = 1; int64(depth) <= config.Crawler.Followlinks || config.Crawler.Followlinks == -1; depth++ {
 
 		found = false // to stop if there aren't others links to visit
 		fetching = 0  // number of go routines fetching links
 		iter := db.NewIterator(util.BytesPrefix([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|")), nil)
 		for iter.Next() {
-			found = true
-			fetching++
-			go fetch(string(iter.Value()), depth, db, done)
-			for fetching >= config.Crawler.Maxconcurrency {
-				err = <-done
-				fetching--
-				time.Sleep(time.Second) // for slow cpu usage
+			if strings.HasSuffix(string(iter.Key()), "|0|") { // not visited
+				found = true
+				fetching++
+				go fetch(string(iter.Value()), depth, db, done)
+				for fetching >= config.Crawler.Maxconcurrency {
+					err = <-done
+					fetching--
+					time.Sleep(time.Second) // for slow cpu usage
+				}
 			}
 		}
 		iter.Release()
@@ -84,6 +91,17 @@ func crawler(db *leveldb.DB) {
 
 }
 
+func resumecrawl(db *leveldb.DB) bool {
+	found := false
+	iter := db.NewIterator(util.BytesPrefix([]byte("visit_link|")), nil)
+	for iter.Next() {
+		found = true
+		break
+	}
+	iter.Release()
+	return found
+}
+
 func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 
 	defer func() {
@@ -99,16 +117,21 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 		return
 	}
 
-	for _, link := range dlinks {
-		data, _ := db.Get([]byte("visit_link|"+link+"|"), nil)
+	for _, url := range dlinks {
+		data, _ := db.Get([]byte("visit_link|"+url+"|0|"), nil)
 		if data == nil {
-			db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth+1))+"|"+link+"|"), []byte(link), nil)
-			db.Put([]byte("visit_link|"+link+"|"), []byte(strconv.Itoa(int(depth+1))), nil)
+			db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth+1))+"|"+url+"|0|"), []byte(url), nil)
+			db.Put([]byte("visit_link|"+url+"|0|"), []byte(strconv.Itoa(int(depth+1))), nil)
 		}
 	}
 
 	//_ = content
 	use(content, db)
+	// lets mark it as visited
+	db.Put([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|"+link+"|1|"), []byte(link), nil)
+	db.Put([]byte("visit_link|"+link+"|1|"), []byte(strconv.Itoa(int(depth))), nil)
+	db.Delete([]byte("visit_dep|"+strconv.Itoa(int(depth))+"|"+link+"|0|"), nil)
+	db.Delete([]byte("visit_link|"+link+"|0|"), nil)
 }
 
 func crawl(link string) (string, []string, error) {

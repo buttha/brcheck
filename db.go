@@ -12,8 +12,8 @@ when program starts and stops, testing|word are resetted into converted|word sta
 
 crawler entries are:
 
-visit_dep|3|link| = link : link to be visited at depth 3
-visit_link|link| = 3 : same (like above)
+visit_dep|3|link|0| = link : link to be visited at depth 3; *|0| = not vistied *|1| = visited
+visit_link|link|0| = 3 : same (like above)
 
 double entries are for search convenience
 */
@@ -173,7 +173,6 @@ func dumpdb(db *leveldb.DB) {
 
 func closeDb(db *leveldb.DB) {
 	fixQueue(db)
-	purgeDbCrawler(db)
 	db.Close()
 }
 

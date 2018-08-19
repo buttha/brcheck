@@ -122,11 +122,10 @@ func main() {
 
 	// main cicle
 
-	if config.Crawler.Starturl != "" { // web crawler
+	if config.Crawler.Starturl != "" || resumecrawl(db) { // web crawler
 		crawler(db)
-	} else { // stdin
-		stdin(db)
 	}
+	stdin(db)
 
 	finishedstdin <- true // tell to goqueue we have finished reading stdin
 	<-finishedtesting     // wait the end of tests
