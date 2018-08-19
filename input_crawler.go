@@ -199,7 +199,20 @@ func crawl(link string) (string, []string, error) {
 						if err != nil {
 							break
 						}
-						dlinks = append(dlinks, base.ResolveReference(u).String())
+
+						solved := base.ResolveReference(u).String()
+
+						if config.Crawler.Samedomain { // same domain only case
+							u, err := url.Parse(solved)
+							if err != nil {
+								break
+							}
+							if u.Hostname() == base.Hostname() {
+								dlinks = append(dlinks, solved)
+							}
+						} else {
+							dlinks = append(dlinks, solved)
+						}
 						break
 					}
 				}

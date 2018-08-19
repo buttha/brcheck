@@ -31,6 +31,7 @@ type configCore struct {
 type configCrawler struct {
 	Starturl         string
 	Followlinks      int64
+	Samedomain       bool
 	Maxconcurrency   int64
 	Iterator         uint64
 	Autocrawlerspeed bool
@@ -63,6 +64,7 @@ func ParseConfig() (Config, error) {
 	paramAutobrainspeed := flag.Bool("autobrainspeed", true, "true = auto-adjust brainwallet's generation speed using electrum's test/second as parameter\nfalse = generate brainwallet at full speed (unnecessary high cpu usage)")
 	paramStarturl := flag.String("starturl", "", "startup words extraction page (leave empty \"\" to disable crawling)")
 	paramFollowlinks := flag.Int64("followlinks", 0, "follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N")
+	paramSamedomain := flag.Bool("samedomain", true, "follow same domain only urls (don't visit sites outside starturl)")
 	paramMaxconcurrency := flag.Int64("maxconcurrency", 10, "max concurrent number of url fetched. WARNING: high memory usage")
 	paramIterator := flag.Uint64("iterator", 10, "0 = disabled ; > 0 number of words")
 	paramAutocrawlerspeed := flag.Bool("autocrawlerspeed", true, "true = auto-adjust generation speed using electrum's test/second as parameter\nfalse = generate at full speed (unnecessary high cpu usage)")
@@ -81,6 +83,7 @@ func ParseConfig() (Config, error) {
 	configuration.Core.Autobrainspeed = *paramAutobrainspeed
 	configuration.Crawler.Starturl = *paramStarturl
 	configuration.Crawler.Followlinks = *paramFollowlinks
+	configuration.Crawler.Samedomain = *paramSamedomain
 	configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
 	configuration.Crawler.Iterator = *paramIterator
 	configuration.Crawler.Autocrawlerspeed = *paramAutocrawlerspeed
@@ -118,6 +121,8 @@ func ParseConfig() (Config, error) {
 			configuration.Crawler.Starturl = *paramStarturl
 		case "followlinks":
 			configuration.Crawler.Followlinks = *paramFollowlinks
+		case "samedomain":
+			configuration.Crawler.Samedomain = *paramSamedomain
 		case "maxconcurrency":
 			configuration.Crawler.Maxconcurrency = *paramMaxconcurrency
 		case "iterator":
