@@ -77,6 +77,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 					fetching--
 				}
 				iter.Release()
+				shutdowncrawler <- true
 				return
 			default:
 			}
@@ -84,15 +85,20 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 		}
 		iter.Release()
 
+		select {
+		case <-shutdowncrawler:
+			for fetching > 0 {
+				err = <-done
+				fetching--
+			}
+			shutdowncrawler <- true
+			return
+		default:
+		}
+
 		for fetching > 0 { // wait until all links are fetched
 			err = <-done
 			fetching--
-		}
-
-		select {
-		case <-shutdowncrawler:
-			return
-		default:
 		}
 
 		if found == false { // no other links to visit

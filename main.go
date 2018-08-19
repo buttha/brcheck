@@ -177,6 +177,7 @@ func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncraw
 		log.Println("...stopping crawler...")
 		select {
 		case shutdowncrawler <- true:
+			<-shutdowncrawler // wait last crawler's operations
 		case <-time.After(30 * time.Second):
 			log.Println("...time out: forced close...")
 		}
