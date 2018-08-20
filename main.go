@@ -149,7 +149,6 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 			doexportdb(db, exportdb)
 			closeExportDb(exportdb)
 		}
-		log.Println("...closing db...")
 		closeDb(db)
 		log.Println("...done")
 		os.Exit(0)
