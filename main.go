@@ -145,10 +145,13 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdown
 		log.Println("Received an interrupt, stopping service...")
 		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler)
 		if exportingdb {
+			log.Println("...exporting db...")
 			doexportdb(db, exportdb)
 			closeExportDb(exportdb)
 		}
+		log.Println("...closing db...")
 		closeDb(db)
+		log.Println("...done")
 		os.Exit(0)
 	}()
 }
@@ -182,7 +185,6 @@ func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncraw
 			log.Println("...time out: forced close...")
 		}
 	}
-	log.Println("...done")
 }
 
 func statsdb(db *leveldb.DB) {
