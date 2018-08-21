@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	// "github.com/pkg/profile" // profiling: https://flaviocopes.com/golang-profiling/
@@ -139,7 +140,7 @@ func main() {
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
