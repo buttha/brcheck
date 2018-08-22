@@ -140,7 +140,7 @@ func main() {
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	go func() {
 		<-signalChan
 		log.Println("Received an interrupt, stopping service...")
