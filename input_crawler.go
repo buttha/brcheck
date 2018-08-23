@@ -263,12 +263,25 @@ func use(text string, db *leveldb.DB) {
 		for j := i + 1; j <= min(i+int(config.Crawler.Iterator), len(words)); j++ {
 			str := fmt.Sprint(strings.Join(words[i:j], " "))
 
-			err := db.Put([]byte("totest|"+str), []byte("1"), nil)
-			if err != nil {
-				fmt.Println("error writing crawl to db:", err.Error())
-				return
+			exists := true // let's see if it's already in database
+			if data1, _ := db.Get([]byte("converted|"+str), nil); data1 == nil {
+				if data2, _ := db.Get([]byte("testing|"+str), nil); data2 == nil {
+					if data3, _ := db.Get([]byte("totest|"+str), nil); data3 == nil {
+						if data4, _ := db.Get([]byte("result|"+str), nil); data4 == nil {
+							exists = false
+						}
+					}
+				}
 			}
-			atomic.AddUint64(&statsdbtotest, 1)
+
+			if exists == false {
+				err := db.Put([]byte("totest|"+str), []byte("1"), nil)
+				if err != nil {
+					fmt.Println("error writing crawl to db:", err.Error())
+					return
+				}
+				atomic.AddUint64(&statsdbtotest, 1)
+			}
 
 			// computes 30% more lines than tests, to be sure there're always lines to be elaborated
 			for config.Crawler.Autocrawlerspeed && float64(atomic.LoadUint64(&statsdbtotest)) > float64(atomic.LoadUint64(&statminutetests))*1.3 && atomic.LoadUint64(&statminutetests) != 0 {
