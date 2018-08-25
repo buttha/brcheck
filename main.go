@@ -62,6 +62,20 @@ func main() {
 	}
 	config = cfg
 
+	var flog *os.File
+	if config.Log.Logfile == "" {
+		config.Log.Log = false
+	} else {
+		config.Log.Log = true
+		flog, err := os.OpenFile(config.Log.Logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Println("Unable to create log file: " + err.Error())
+			return
+		}
+		defer flog.Close()
+		log.SetOutput(flog)
+	}
+
 	if config.Db.Dbdir == "" {
 		fmt.Println("Missing database directory. Use config file or command line parameter -dbdir")
 		return
@@ -108,7 +122,7 @@ func main() {
 	shutdowngoresults := make(chan bool) // used to stop goresults (by manageshutdown)
 	shutdowncrawler := make(chan bool)   // used to stop crawler, if running (by manageshutdown)
 
-	manageshutdown(db, exportdb, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler) // detect program interruption
+	manageshutdown(db, exportdb, flog, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler) // detect program interruption
 
 	stats(db) // manage statistics
 
@@ -138,51 +152,71 @@ func main() {
 
 }
 
-func manageshutdown(db *leveldb.DB, exportdb *sql.DB, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
+func logger(s string) {
+	if config.Log.Log {
+		log.Println(s)
+	}
+}
+
+func manageshutdown(db *leveldb.DB, exportdb *sql.DB, flog *os.File, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	go func() {
 		<-signalChan
-		log.Println("Received an interrupt, stopping service...")
+		fmt.Println("Received an interrupt, stopping service...")
+		logger(fmt.Sprint("Received an interrupt, stopping service..."))
 		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler)
 		if exportingdb {
-			log.Println("...exporting db...")
+			fmt.Println("...exporting db...")
+			logger(fmt.Sprint("...exporting db..."))
 			doexportdb(db, exportdb)
 			closeExportDb(exportdb)
 		}
 		closeDb(db)
-		log.Println("...done")
+		fmt.Println("...done")
+		logger(fmt.Sprint("...done"))
+		if config.Log.Log {
+			flog.Close()
+		}
 		os.Exit(0)
 	}()
 }
 
 func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) {
-	log.Println("...stopping brainwallet's generations...")
+	fmt.Println("...stopping brainwallet's generations...")
+	logger(fmt.Sprint("...stopping brainwallet's generations..."))
 	select {
 	case shutdowngobrains <- true:
 	case <-time.After(10 * time.Second):
-		log.Println("...time out: forced close...")
+		fmt.Println("...time out: forced close...")
+		logger(fmt.Sprint("...time out: forced close..."))
 	}
-	log.Println("...stopping queue manager...")
+	fmt.Println("...stopping queue manager...")
+	logger(fmt.Sprint("...stopping queue manager..."))
 	select {
 	case shutdowngoqueue <- true:
 	case <-time.After(10 * time.Second):
-		log.Println("...time out: forced close...")
+		fmt.Println("...time out: forced close...")
+		logger(fmt.Sprint("...time out: forced close..."))
 	}
-	log.Println("...stopping results manager...")
+	fmt.Println("...stopping results manager...")
+	logger(fmt.Sprint("...stopping results manager..."))
 	select {
 	case shutdowngoresults <- true:
 	case <-time.After(10 * time.Second):
-		log.Println("...time out: forced close...")
+		fmt.Println("...time out: forced close...")
+		logger(fmt.Sprint("...time out: forced close..."))
 	}
 	if crawlerrunnig {
 		config.Crawler.Autocrawlerspeed = false // to unlock wait timeout and speed process termination
-		log.Println("...stopping crawler...")
+		fmt.Println("...stopping crawler...")
+		logger(fmt.Sprint("...stopping crawler..."))
 		select {
 		case shutdowncrawler <- true:
 			<-shutdowncrawler // wait last crawler's operations
 		case <-time.After(30 * time.Second):
-			log.Println("...time out: forced close...")
+			fmt.Println("...time out: forced close...")
+			logger(fmt.Sprint("...time out: forced close..."))
 		}
 	}
 }
@@ -231,7 +265,7 @@ func stats(db *leveldb.DB) {
 					timetocomplete = "NA"
 				}
 
-				log.Printf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s\n", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, atomic.LoadUint64(&statsdbtotest), atomic.LoadUint64(&statsdbconverted), atomic.LoadUint64(&statsdbtesting), atomic.LoadUint64(&statsdbresult), timetocomplete)
+				logger(fmt.Sprintf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, atomic.LoadUint64(&statsdbtotest), atomic.LoadUint64(&statsdbconverted), atomic.LoadUint64(&statsdbtesting), atomic.LoadUint64(&statsdbresult), timetocomplete))
 
 				atomic.StoreUint64(&statminutetests, 0)
 				atomic.StoreUint64(&statbrainsgenerated, 0)
@@ -265,18 +299,18 @@ func gobrains(finishedstdin, finishedbrains, shutdowngobrains chan bool, db *lev
 			atomic.AddUint64(&statbrainsgenerated, 1)
 			addressB, err := json.Marshal(address)
 			if err != nil {
-				log.Println("error encoding a brainwallet to test")
+				logger(fmt.Sprint("error encoding a brainwallet to test"))
 				continue
 			}
 			err = db.Put([]byte("converted|"+pass), addressB, nil)
 			if err != nil {
-				log.Println("error setting totest -> testing a queue item: ", err.Error())
+				logger(fmt.Sprint("error setting totest -> testing a queue item: ", err.Error()))
 				continue
 			}
 			atomic.AddUint64(&statsdbconverted, 1)
 			err = db.Delete(key, nil)
 			if err != nil {
-				log.Println("error removing a testing queue row: ", err.Error())
+				logger(fmt.Sprint("error removing a testing queue row: ", err.Error()))
 				continue
 			}
 			atomic.AddUint64(&statsdbtotest, ^uint64(0))
@@ -340,18 +374,18 @@ func goqueue(wordschan chan BrainAddress, finishedqueue, finishedstdin, finished
 			numrows++
 			err := json.Unmarshal(iter.Value(), &address)
 			if err != nil {
-				log.Println("error decoding a brainwallet to test")
+				logger(fmt.Sprint("error decoding a brainwallet to test"))
 				continue
 			}
 			err = db.Put([]byte("testing|"+address.Passphrase), iter.Value(), nil)
 			if err != nil {
-				log.Println("error setting converted -> testing a queue item: ", err.Error())
+				logger(fmt.Sprint("error setting converted -> testing a queue item: ", err.Error()))
 				continue
 			}
 			atomic.AddUint64(&statsdbtesting, 1)
 			err = db.Delete(iter.Key(), nil)
 			if err != nil {
-				log.Println("error removing a converted queue row: ", err.Error())
+				logger(fmt.Sprint("error removing a converted queue row: ", err.Error()))
 				continue
 			}
 			atomic.AddUint64(&statsdbconverted, ^uint64(0))
@@ -409,7 +443,7 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 		case result = <-resultschan: // here it's the result
 			if result.NumTx+result.NumTxCompressed != 0 {
 				if config.Log.Logresult {
-					log.Printf("%+v\n", result)
+					logger(fmt.Sprintf("%+v", result))
 				}
 				data, err := db.Get([]byte("result|"+result.Address.Passphrase), nil) // is it a duplicate?
 				if data == nil {
@@ -419,12 +453,12 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 				resjson, _ := json.Marshal(result)
 				err = db.Put([]byte("result|"+result.Address.Passphrase), resjson, nil)
 				if err != nil {
-					log.Println("error writing a result in db: " + err.Error())
+					logger(fmt.Sprint("error writing a result in db: " + err.Error()))
 				}
 			}
 			err := db.Delete([]byte("testing|"+result.Address.Passphrase), nil)
 			if err != nil {
-				log.Println("error removing a queue item from testing status: " + err.Error())
+				logger(fmt.Sprint("error removing a queue item from testing status: " + err.Error()))
 			}
 			atomic.AddUint64(&statsdbtesting, ^uint64(0))
 			mutexactivetests.Lock()

@@ -7,6 +7,8 @@ import (
 )
 
 type configLog struct {
+	Log        bool
+	Logfile    string
 	Lognet     bool
 	Logstats   bool
 	Logresult  bool
@@ -52,7 +54,8 @@ func ParseConfig() (Config, error) {
 	var configuration Config
 
 	paramConfigFile := flag.String("config", "", "config file. Command line parameters has higher priority")
-	paramLognet := flag.Bool("lognet", true, "log network activity")
+	paramLogfile := flag.String("logfile", "./brcheck.log", "log file. Set empty \"\" to disable")
+	paramLognet := flag.Bool("lognet", false, "log network activity")
 	paramLogstats := flag.Bool("logstats", true, "log activity stats")
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
 	paramLogcrawler := flag.Bool("logcrawler", true, "log crawler's activity")
@@ -71,6 +74,7 @@ func ParseConfig() (Config, error) {
 	flag.Parse()
 
 	// set default values
+	configuration.Log.Logfile = *paramLogfile
 	configuration.Log.Lognet = *paramLognet
 	configuration.Log.Logstats = *paramLogstats
 	configuration.Log.Logresult = *paramLogresult
@@ -97,6 +101,8 @@ func ParseConfig() (Config, error) {
 	// now rewrite configuration "visiting" flags that have been set via command line
 	visitor := func(a *flag.Flag) {
 		switch a.Name {
+		case "logfile":
+			configuration.Log.Logfile = *paramLogfile
 		case "lognet":
 			configuration.Log.Lognet = *paramLognet
 		case "logstats":

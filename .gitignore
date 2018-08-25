@@ -8,3 +8,4 @@ debug
 *.pdf
 database
 temp/
+*.log

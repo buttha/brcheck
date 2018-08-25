@@ -1,9 +1,9 @@
-# sample brcheck config file
-
-[log]
-lognet = false # log network's activity (default: true)
+# sample brcheck config file 
+[log] 
+logfile = "./brcheck.log" # logfile. Leave empty "" to disable (default = "brcheck.log")
+lognet = false # log network's activity (default: false)
 logstats = true # statistics' log (default: true)
-logresult = false # log positive results (default: true)
+logresult = true # log positive results (default: true)
 logcrawler = true # log crawler's activity (default: true)
 
 [conn]
@@ -24,7 +24,7 @@ starturl = "https://bitcoin.org" # startup words extraction page (leave empty ""
 followlinks = -1 # follow found links in page: 0 = no ; -1 = infinte depth;  N = depth N (default: 0)
 samedomain = true # follow same domain only urls (don't visit sites outside starturl) (default: true)
 maxconcurrency = 10 # max concurrent number of url fetched. WARNING: high memory usage (default: 10)
-iterator = 5 # number of words (default: 10)
+iterator = 10 # number of words (default: 10)
 autocrawlerspeed = true # true = auto-adjust generation speed using electrum's test/second as parameter (that's the default)
                         # false = generate at full speed (unnecessary high cpu usage)
                         # NOTE: with this enabled, "Time to complete" estimation doesn't work correctly, since we never have

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"sync/atomic"
 	"time"
@@ -17,7 +16,7 @@ func stdin(db *leveldb.DB) {
 	stat, _ := os.Stdin.Stat()
 	if (stat.Mode() & os.ModeCharDevice) == 0 {
 		lines := 0
-		log.Println("Start reading stdin")
+		logger(fmt.Sprint("Start reading stdin"))
 		for scanner.Scan() {
 			err := db.Put([]byte("totest|"+scanner.Text()), []byte("1"), nil)
 			if err != nil {
@@ -31,6 +30,6 @@ func stdin(db *leveldb.DB) {
 				lines = 0
 			}
 		}
-		log.Println("Finished reading stdin")
+		logger(fmt.Sprint("Finished reading stdin"))
 	}
 }

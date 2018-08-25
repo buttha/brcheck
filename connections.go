@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/tls"
-	"log"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,7 +210,7 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 	}
 
 	if config.Log.Lognet {
-		log.Printf("connected to: %s %s (# peers: %d)", peer.Name, protoport, len(connectedpeers))
+		logger(fmt.Sprintf("connected to: %s %s (# peers: %d)", peer.Name, protoport, len(connectedpeers)))
 	}
 
 	mutexconnectedpeers.Unlock()
@@ -353,7 +353,7 @@ func serveRequests(peer connectedpeer) {
 
 		if time.Since(start) >= time.Hour {
 			if config.Log.Lognet {
-				log.Printf("Disconnected from: %s: reached 1 hour connection", peer.peer.Name)
+				logger(fmt.Sprintf("Disconnected from: %s: reached 1 hour connection", peer.peer.Name))
 			}
 			return
 		}
@@ -364,9 +364,9 @@ func serveRequests(peer connectedpeer) {
 
 func servererr(peer connectedpeer, req BrainAddress, operation string, err error) {
 	peer.nottestedchan <- req // send back request so another server will serve it
-	if config.Log.Lognet {
+	if config.Log.Lognet && config.Log.Log {
 		mutexconnectedpeers.Lock()
-		log.Printf("Disconnected from: %s (# peers: %d) requesting \"%s\" on address %+v err: %s", peer.peer.Name, len(connectedpeers)-1, operation, req, err)
+		logger(fmt.Sprintf("Disconnected from: %s (# peers: %d) requesting \"%s\" on address %+v err: %s", peer.peer.Name, len(connectedpeers)-1, operation, req, err))
 		mutexconnectedpeers.Unlock()
 	}
 }

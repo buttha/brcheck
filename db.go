@@ -24,7 +24,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -101,7 +100,7 @@ func doexportdb(db *leveldb.DB, exportdb *sql.DB) {
 		mutexSQL.Lock()
 		tx, err := exportdb.Begin() // init transaction
 		if err != nil {
-			log.Println("error starting exportdb transaction:", err.Error())
+			logger(fmt.Sprint("error starting exportdb transaction:", err.Error()))
 			mutexSQL.Unlock()
 			break
 		}
@@ -110,12 +109,12 @@ func doexportdb(db *leveldb.DB, exportdb *sql.DB) {
 		for iter.Next() {
 			err = json.Unmarshal(iter.Value(), &brain)
 			if err != nil {
-				log.Println("exportdb: error decoding a result row:", err.Error())
+				logger(fmt.Sprint("exportdb: error decoding a result row:", err.Error()))
 				continue
 			}
 			_, err = insertStmt.Exec(brain.Address.Passphrase, brain.Address.Address, brain.Address.Scripthash, brain.Address.PrivkeyWIF, brain.Address.CompressedAddress, brain.Address.CompressedScripthash, brain.Address.CompressedPrivkeyWIF, brain.Confirmed, brain.Unconfirmed, brain.LastTxTime, brain.NumTx, brain.ConfirmedCompressed, brain.UnconfirmedCompressed, brain.LastTxTimeCompressed, brain.NumTxCompressed)
 			if err != nil {
-				log.Println("exportdb: error writing a result row:", err.Error())
+				logger(fmt.Sprint("exportdb: error writing a result row:", err.Error()))
 				continue
 			}
 		}
@@ -134,18 +133,18 @@ func fixQueue(db *leveldb.DB) {
 		pass := strings.TrimLeft(string(key), "testing|")
 		err := db.Put([]byte("converted|"+pass), iter.Value(), nil)
 		if err != nil {
-			log.Println("error setting testing -> converted a queue item: ", err.Error())
+			logger(fmt.Sprint("error setting testing -> converted a queue item: ", err.Error()))
 			continue
 		}
 		err = db.Delete(iter.Key(), nil)
 		if err != nil {
-			log.Println("error removing testing queue a queue item: " + err.Error())
+			logger(fmt.Sprint("error removing testing queue a queue item: " + err.Error()))
 		}
 	}
 	iter.Release()
 	err := iter.Error()
 	if err != nil {
-		log.Println("error shutting down working db: ", err.Error())
+		logger(fmt.Sprint("error shutting down working db: ", err.Error()))
 	}
 }
 

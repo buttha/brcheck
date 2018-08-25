@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -26,6 +25,8 @@ visit_link|link|0| = 3 : same (like above)
 double entries are for search convenience
 */
 
+var exitcrawler bool // used to check if shutdown signal has arrived
+
 func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 	var err error
@@ -40,7 +41,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 	if lastdepth == 0 { // not resuming: let's start from config.Crawler.Starturl
 		lastdepth = 1
 		if config.Log.Logcrawler {
-			log.Println("[CRAWLER] start fetching urls")
+			logger(fmt.Sprint("[CRAWLER] start fetching urls"))
 		}
 
 		go fetch(config.Crawler.Starturl, 0, db, done)
@@ -50,7 +51,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 		}
 	} else { // resume
 		if config.Log.Logcrawler {
-			log.Println("[CRAWLER] resuming crawling")
+			logger(fmt.Sprint("[CRAWLER] resuming crawling"))
 		}
 	}
 
@@ -73,6 +74,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 			select {
 			case <-shutdowncrawler:
+				exitcrawler = true
 				for fetching > 0 {
 					err = <-done
 					fetching--
@@ -88,6 +90,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 
 		select {
 		case <-shutdowncrawler:
+			exitcrawler = true
 			for fetching > 0 {
 				err = <-done
 				fetching--
@@ -111,7 +114,7 @@ func crawler(shutdowncrawler chan bool, db *leveldb.DB) {
 	purgeDbCrawler(db) // delete all "visit_*" entries
 
 	if config.Log.Logcrawler {
-		log.Println("[CRAWLER] finished fetching urls")
+		logger(fmt.Sprint("[CRAWLER] finished fetching urls"))
 	}
 
 }
@@ -143,9 +146,13 @@ func fetch(link string, depth uint64, db *leveldb.DB, done chan error) {
 	content, dlinks, err := crawl(link)
 	if err != nil {
 		if config.Log.Logcrawler {
-			log.Println("[CRAWLER] error: " + err.Error())
+			logger(fmt.Sprint("[CRAWLER] error: " + err.Error()))
 		}
 		done <- err
+		return
+	}
+
+	if exitcrawler { // shudown
 		return
 	}
 
@@ -261,6 +268,11 @@ func use(text string, db *leveldb.DB) {
 
 	for i := 0; i <= len(words); i++ {
 		for j := i + 1; j <= min(i+int(config.Crawler.Iterator), len(words)); j++ {
+
+			if exitcrawler {
+				return
+			}
+
 			str := fmt.Sprint(strings.Join(words[i:j], " "))
 
 			exists := true // let's see if it's already in database
