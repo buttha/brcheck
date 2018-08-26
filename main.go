@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -63,8 +65,13 @@ func main() {
 	config = cfg
 
 	var flog *os.File
-	if config.Log.Logfile == "" {
+	if config.Log.Logfile == "" { // no log file
 		config.Log.Log = false
+		if !config.Log.Logstdio { // no log to stdio
+			log.SetOutput(ioutil.Discard)
+		} else {
+			log.SetOutput(os.Stdout)
+		}
 	} else {
 		config.Log.Log = true
 		flog, err := os.OpenFile(config.Log.Logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
@@ -73,7 +80,12 @@ func main() {
 			return
 		}
 		defer flog.Close()
-		log.SetOutput(flog)
+		if !config.Log.Logstdio {
+			log.SetOutput(flog)
+		} else {
+			mw := io.MultiWriter(os.Stdout, flog)
+			log.SetOutput(mw)
+		}
 	}
 
 	if config.Db.Dbdir == "" {
@@ -153,9 +165,7 @@ func main() {
 }
 
 func logger(s string) {
-	if config.Log.Log {
-		log.Println(s)
-	}
+	log.Println(s)
 }
 
 func manageshutdown(db *leveldb.DB, exportdb *sql.DB, flog *os.File, shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) { // detect program interrupt
@@ -163,17 +173,14 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, flog *os.File, shutdowngob
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	go func() {
 		<-signalChan
-		fmt.Println("Received an interrupt, stopping service...")
 		logger(fmt.Sprint("Received an interrupt, stopping service..."))
 		shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler)
 		if exportingdb {
-			fmt.Println("...exporting db...")
 			logger(fmt.Sprint("...exporting db..."))
 			doexportdb(db, exportdb)
 			closeExportDb(exportdb)
 		}
 		closeDb(db)
-		fmt.Println("...done")
 		logger(fmt.Sprint("...done"))
 		if config.Log.Log {
 			flog.Close()
@@ -183,39 +190,31 @@ func manageshutdown(db *leveldb.DB, exportdb *sql.DB, flog *os.File, shutdowngob
 }
 
 func shutdown(shutdowngobrains, shutdowngoqueue, shutdowngoresults, shutdowncrawler chan bool) {
-	fmt.Println("...stopping brainwallet's generations...")
 	logger(fmt.Sprint("...stopping brainwallet's generations..."))
 	select {
 	case shutdowngobrains <- true:
 	case <-time.After(10 * time.Second):
-		fmt.Println("...time out: forced close...")
 		logger(fmt.Sprint("...time out: forced close..."))
 	}
-	fmt.Println("...stopping queue manager...")
 	logger(fmt.Sprint("...stopping queue manager..."))
 	select {
 	case shutdowngoqueue <- true:
 	case <-time.After(10 * time.Second):
-		fmt.Println("...time out: forced close...")
 		logger(fmt.Sprint("...time out: forced close..."))
 	}
-	fmt.Println("...stopping results manager...")
 	logger(fmt.Sprint("...stopping results manager..."))
 	select {
 	case shutdowngoresults <- true:
 	case <-time.After(10 * time.Second):
-		fmt.Println("...time out: forced close...")
 		logger(fmt.Sprint("...time out: forced close..."))
 	}
 	if crawlerrunnig {
 		config.Crawler.Autocrawlerspeed = false // to unlock wait timeout and speed process termination
-		fmt.Println("...stopping crawler...")
 		logger(fmt.Sprint("...stopping crawler..."))
 		select {
 		case shutdowncrawler <- true:
 			<-shutdowncrawler // wait last crawler's operations
 		case <-time.After(30 * time.Second):
-			fmt.Println("...time out: forced close...")
 			logger(fmt.Sprint("...time out: forced close..."))
 		}
 	}

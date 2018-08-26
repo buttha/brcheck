@@ -364,7 +364,7 @@ func serveRequests(peer connectedpeer) {
 
 func servererr(peer connectedpeer, req BrainAddress, operation string, err error) {
 	peer.nottestedchan <- req // send back request so another server will serve it
-	if config.Log.Lognet && config.Log.Log {
+	if config.Log.Lognet {
 		mutexconnectedpeers.Lock()
 		logger(fmt.Sprintf("Disconnected from: %s (# peers: %d) requesting \"%s\" on address %+v err: %s", peer.peer.Name, len(connectedpeers)-1, operation, req, err))
 		mutexconnectedpeers.Unlock()
