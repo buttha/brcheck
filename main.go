@@ -441,13 +441,13 @@ func goresults(wordschan, nottestedchan chan BrainAddress, resultschan chan Brai
 			wordschan <- nottested // resubmit to another server
 		case result = <-resultschan: // here it's the result
 			if result.NumTx+result.NumTxCompressed != 0 {
-				if config.Log.Logresult {
-					logger(fmt.Sprintf("%+v", result))
-				}
 				data, err := db.Get([]byte("result|"+result.Address.Passphrase), nil) // is it a duplicate?
 				if data == nil {
 					atomic.AddUint64(&statfound, 1)
 					atomic.AddUint64(&statsdbresult, 1)
+					if config.Log.Logresult {
+						logger(fmt.Sprintf("%+v", result))
+					}
 				}
 				resjson, _ := json.Marshal(result)
 				err = db.Put([]byte("result|"+result.Address.Passphrase), resjson, nil)
