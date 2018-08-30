@@ -264,7 +264,7 @@ func stats(db *leveldb.DB) {
 					timetocomplete = "NA"
 				}
 
-				logger(fmt.Sprintf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Testing: %d | Found: %d || Time to complete: %s", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, atomic.LoadUint64(&statsdbtotest), atomic.LoadUint64(&statsdbconverted), atomic.LoadUint64(&statsdbtesting), atomic.LoadUint64(&statsdbresult), timetocomplete))
+				logger(fmt.Sprintf("STATS: [Total] Tests: %d | Addresses found: %d || [Last minute] Tests: %d | Average: %.2f/s | Brains generated: %d (%.2f/s) || [DB] To be converted: %d | Converted (waiting to be tested): %d | Found: %d || Time to complete: %s", atomic.LoadUint64(&stattotaltests), atomic.LoadUint64(&statfound), atomic.LoadUint64(&statminutetests), avgsec, atomic.LoadUint64(&statbrainsgenerated), brainsgeneratedpersec, atomic.LoadUint64(&statsdbtotest), atomic.LoadUint64(&statsdbconverted), atomic.LoadUint64(&statsdbresult), timetocomplete))
 
 				atomic.StoreUint64(&statminutetests, 0)
 				atomic.StoreUint64(&statbrainsgenerated, 0)
