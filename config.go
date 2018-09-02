@@ -18,6 +18,7 @@ type configLog struct {
 
 type configConn struct {
 	Sslonly bool
+	Tor     string
 }
 
 type configDb struct {
@@ -62,6 +63,7 @@ func ParseConfig() (Config, error) {
 	paramLogresult := flag.Bool("logresult", true, "log positive results")
 	paramLogcrawler := flag.Bool("logcrawler", true, "log crawler's activity")
 	paramSslonly := flag.Bool("sslonly", false, "connect only to SSL nodes")
+	paramTor := flag.String("tor", "", "use tor. Leave empty \"\" to disable")
 	paramDbdir := flag.String("dbdir", "", "working db directory")
 	paramExportdbfile := flag.String("exportdbfile", "", "export database filename (sqlite3) leave empty to disable export")
 	paramExportdbtable := flag.String("exportdbtable", "", "export db tablename")
@@ -83,6 +85,7 @@ func ParseConfig() (Config, error) {
 	configuration.Log.Logresult = *paramLogresult
 	configuration.Log.Logcrawler = *paramLogcrawler
 	configuration.Conn.Sslonly = *paramSslonly
+	configuration.Conn.Tor = *paramTor
 	configuration.Db.Dbdir = *paramDbdir
 	configuration.Db.Exportdbfile = *paramExportdbfile
 	configuration.Db.Exportdbtable = *paramExportdbtable
@@ -118,6 +121,8 @@ func ParseConfig() (Config, error) {
 			configuration.Log.Logcrawler = *paramLogcrawler
 		case "sslonly":
 			configuration.Conn.Sslonly = *paramSslonly
+		case "tor":
+			configuration.Conn.Tor = *paramTor
 		case "dbdir":
 			configuration.Db.Dbdir = *paramDbdir
 		case "exportdbfile":

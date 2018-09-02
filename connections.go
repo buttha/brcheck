@@ -154,6 +154,7 @@ func connect(peer electrum.Peer, protoport string, wordschan, nottestedchan chan
 		TLS:       &tls.Config{InsecureSkipVerify: true},
 		//Timeout:   5, // seconds
 		Reconnect: false,
+		Tor:       config.Conn.Tor,
 	})
 
 	if err != nil {

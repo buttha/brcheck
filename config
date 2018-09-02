@@ -9,6 +9,7 @@ logcrawler = true # log crawler's activity (default: true)
 
 [conn]
 sslonly = true # connect only to SSL nodes (default: false)
+# tor = "127.0.0.1:9150" # use tor. Leave empty "" (or comment) to disable
 
 [db]
 dbdir = "./database" # db directory
